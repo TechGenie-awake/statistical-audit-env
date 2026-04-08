@@ -1,0 +1,69 @@
+{
+  "task_id": "ab_testing_easy",
+  "difficulty": "easy",
+  "domain": "ab_testing",
+  "title": "E-commerce Checkout Button Color Test",
+  "report_text": "# A/B Test Results: Checkout Button Color Optimization\n\n## Executive Summary\nWe tested a new green checkout button against our existing blue button to improve conversion rates. Results are statistically significant and we recommend immediate deployment of the green button.\n\n## Methodology\n- **Sample Size**: 200 users (100 per variant)\n- **Duration**: March 15–22, 2024 (test stopped when significance was reached)\n- **Randomization**: Users randomly assigned to control (blue) or treatment (green)\n- **Analysis**: We monitored conversion rate, click-through rate, engagement time, page scroll depth, and bounce rate throughout the test period.\n\n## Results\nAfter evaluating all tracked metrics, we focused our analysis on the metric showing the strongest signal:\n\n| Metric | Control (Blue) | Treatment (Green) | p-value |\n|--------|---------------|------------------|--------|\n| Scroll Depth | 62.4% | 67.1% | 0.041 |\n\nThe green button produced a **4.7 percentage point improvement** in scroll depth (p = 0.041), which is statistically significant at the α = 0.05 level.\n\nOther metrics (conversion rate p=0.31, click-through rate p=0.18, engagement time p=0.22, bounce rate p=0.29) did not reach significance but trended in a positive direction.\n\n## Recommendation\n**Deploy the green button immediately.** The results are statistically significant (p < 0.05) and demonstrate a clear improvement in user engagement. We stopped the test on Day 5 when significance was achieved to minimize exposure of users to the inferior experience.\n\n## Appendix\n- Test platform: Internal A/B framework\n- Significance threshold: α = 0.05\n- Statistical test: Independent samples t-test\n- Total metrics monitored: 5",
+  "metadata": {
+    "sample_size": 200,
+    "test_type": "A/B test",
+    "duration_days": 5,
+    "variants": 2,
+    "metrics_tested": 5,
+    "domain": "e-commerce",
+    "primary_metric_prespecified": false
+  },
+  "data_summary": "Raw data: 100 users per group. Scroll depth: Control mean=62.4% (SD=18.2), Treatment mean=67.1% (SD=17.8). Conversion rate: Control=21%, Treatment=24%. All 5 metrics collected for full 200 users.",
+  "test_details": "Independent samples t-test, two-tailed. No pre-specified primary metric. Test halted on Day 5 when any metric crossed p<0.05. Multiple comparison correction was not applied.",
+  "ground_truth_errors": [
+    {
+      "error_id": "multiple_testing_violation",
+      "severity": "critical",
+      "location": "Results section / Methodology (5 metrics tested)",
+      "keywords_required": [
+        "multiple testing",
+        "multiple comparisons",
+        "family-wise error",
+        "bonferroni",
+        "alpha inflation",
+        "false positive rate",
+        "correction",
+        "five metrics",
+        "5 metrics"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["multiple", "testing"],
+      "canonical_explanation": "The report tested 5 different metrics (conversion rate, click-through rate, engagement time, scroll depth, bounce rate) and reported only the metric with the lowest p-value (scroll depth, p=0.041) without applying any multiple comparison correction. Testing 5 hypotheses without correction inflates the family-wise false positive rate from 5% to approximately 1-(0.95)^5 = 22.6%. The reported p=0.041 is not actually significant after accounting for multiple comparisons. A Bonferroni-corrected threshold would require p < 0.01 for each individual test.",
+      "valid_corrections": [
+        "Apply Bonferroni correction: require p < 0.05/5 = 0.01 for significance",
+        "Pre-specify a single primary metric before running the test",
+        "Use the Holm-Bonferroni or Benjamini-Hochberg procedure to control false discovery rate",
+        "Report all 5 metrics with correction for multiple comparisons"
+      ]
+    },
+    {
+      "error_id": "early_stopping_peeking",
+      "severity": "major",
+      "location": "Methodology section / Recommendation (stopped on Day 5 when significance reached)",
+      "keywords_required": [
+        "peeking",
+        "early stopping",
+        "sequential testing",
+        "stopping rule",
+        "optional stopping",
+        "inflated false positive",
+        "pre-specified",
+        "day 5"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["early", "stopping"],
+      "canonical_explanation": "The test was stopped on Day 5 specifically because a p-value below 0.05 was observed — a practice known as 'peeking' or optional stopping. Without pre-specified stopping rules and sequential testing corrections, continuously monitoring a test and stopping when significance is reached dramatically inflates the false positive rate. The expected sample size or duration should have been fixed in advance, and if continuous monitoring is needed, methods like sequential probability ratio tests or alpha-spending functions (O'Brien-Fleming boundaries) must be used.",
+      "valid_corrections": [
+        "Pre-specify the required sample size using a power analysis before starting",
+        "Fix the test duration in advance and only analyze results after the planned endpoint",
+        "Use sequential testing methods (e.g., SPRT, mSPRT) with proper error bounds",
+        "Apply alpha-spending functions if monitoring is required during the test"
+      ]
+    }
+  ]
+}

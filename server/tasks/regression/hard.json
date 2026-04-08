@@ -1,0 +1,141 @@
+{
+  "task_id": "regression_hard",
+  "difficulty": "hard",
+  "domain": "regression",
+  "title": "GDP Growth Forecasting Model",
+  "report_text": "# Macroeconomic Forecasting: GDP Growth Model\n\n## Executive Summary\nWe built a linear regression model to forecast quarterly GDP growth using unemployment rate, inflation (CPI), and the federal funds interest rate. The model achieves R² = 0.84 and provides strong evidence that lower unemployment drives GDP growth. Policy implications are discussed.\n\n## Data\n- **Source**: Federal Reserve FRED database, 1990–2023 (136 quarters)\n- **Dependent variable**: Real GDP growth rate (quarter-over-quarter, %)\n- **Independent variables**:\n  - Unemployment rate (%)\n  - CPI inflation rate (%)\n  - Federal funds rate (%)\n\n## Model Results\n\n**OLS Regression Output:**\n| Variable | Coefficient | Std Error | t-stat | p-value |\n|----------|-------------|-----------|--------|---------|\n| Intercept | 8.42 | 1.21 | 6.96 | < 0.001 |\n| Unemployment | -0.71 | 0.09 | -7.89 | < 0.001 |\n| Inflation (CPI) | 0.38 | 0.12 | 3.17 | 0.002 |\n| Fed Funds Rate | -0.22 | 0.08 | -2.75 | 0.007 |\n\n**Model Fit:**\n- R² = 0.84\n- Adjusted R² = 0.836\n- F-statistic = 238.7 (p < 0.001)\n\n**Trend Analysis:**\nAll three independent variables show strong upward trends from 1990 to 2023:\n- Unemployment: rose from 5.2% (1990) to peak 14.7% (2020), now at 3.8%\n- CPI inflation: averaged 2.8% through 2019, spiked to 9.1% in 2022\n- Fed funds rate: ranged from 0.08% to 19.0% (historical)\n\nGDP growth rate showed corresponding movements, including the Great Recession (-8.9% in Q2 2020) and strong recovery.\n\n## Key Findings\n1. **Unemployment is the primary driver**: A 1% increase in unemployment reduces GDP growth by 0.71 percentage points (Okun's Law confirmed)\n2. **Inflation has a modest positive effect**: 1% rise in CPI associated with 0.38% GDP growth increase\n3. **Higher interest rates modestly reduce growth**: Each 1% rate increase reduces GDP growth by 0.22%\n\n## Measurement Note\nThe CPI inflation figures used are the Bureau of Labor Statistics official estimates. These are revised estimates with known measurement uncertainty of approximately ±0.3 percentage points for any given quarter.\n\n## Policy Recommendation\nThe Federal Reserve should maintain unemployment below 4.5% to ensure positive GDP growth. The model provides quantitative guidance for policy calibration.",
+  "metadata": {
+    "sample_size": 136,
+    "model_type": "OLS linear regression",
+    "time_period": "1990-2023",
+    "domain": "macroeconomics",
+    "variables_trending": true
+  },
+  "data_summary": "136 quarterly observations. GDP growth, unemployment, inflation, and fed funds rate all show strong trends over the 33-year period. All variables are time series with significant autocorrelation. CPI has known ±0.3pp measurement error.",
+  "test_details": "OLS regression on levels (not differences). No stationarity test (ADF/KPSS). No Durbin-Watson statistic for autocorrelation. Measurement error in CPI not modeled. Simultaneity between GDP and unemployment not addressed.",
+  "ground_truth_errors": [
+    {
+      "error_id": "spurious_regression",
+      "severity": "critical",
+      "location": "Trend Analysis section / Model Results (all variables trending over time)",
+      "keywords_required": [
+        "spurious regression",
+        "spurious correlation",
+        "non-stationary",
+        "unit root",
+        "stationarity",
+        "cointegration",
+        "trending",
+        "ADF",
+        "KPSS",
+        "time series"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["spurious", "non-stationary"],
+      "canonical_explanation": "The report uses levels of macroeconomic variables (unemployment rate, CPI, fed funds rate) that all show strong trends over time. When non-stationary time series (those with unit roots or deterministic trends) are regressed on each other, the result is typically a spurious regression: high R² and statistically significant coefficients that are meaningless artifacts of shared time trends, not genuine causal relationships. The high R²=0.84 and significant coefficients are thus unreliable. The correct approach is to test for stationarity (ADF or KPSS tests) and, if non-stationary, either use first differences or test for cointegration (Johansen or Engle-Granger) before concluding there is a real relationship.",
+      "valid_corrections": [
+        "Test all variables for stationarity using ADF or KPSS tests before modeling",
+        "Use first differences (change in unemployment, change in inflation) rather than levels",
+        "Test for cointegration if using levels, and apply VECM if cointegrated",
+        "Include a time trend as a control variable to partial out common trending behavior"
+      ]
+    },
+    {
+      "error_id": "reverse_causality_unemployment",
+      "severity": "critical",
+      "location": "Key Findings (unemployment drives GDP) / Policy Recommendation",
+      "keywords_required": [
+        "reverse causality",
+        "simultaneity",
+        "Okun's law",
+        "bidirectional",
+        "GDP causes unemployment",
+        "causal direction",
+        "endogenous",
+        "instrumental variable"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["reverse", "causality"],
+      "canonical_explanation": "The report concludes that 'lower unemployment drives GDP growth,' but the causal direction in macroeconomics runs both ways. Okun's Law itself is an empirical regularity about correlation between output and unemployment — it does not establish that unemployment drives output. In reality, GDP growth drives employment: when firms produce more (GDP rises), they hire more workers (unemployment falls). The OLS regression cannot distinguish the direction of causality. Treating the coefficient as if reducing unemployment would cause GDP to grow (per the policy recommendation) is a reverse-causation error. Instrumental variables or structural VAR models are needed to identify the causal direction.",
+      "valid_corrections": [
+        "Use a Vector Autoregression (VAR) or Structural VAR (SVAR) to model bidirectional causality",
+        "Apply Granger causality tests to assess the direction of temporal causality",
+        "Use instrumental variables for unemployment that affect employment but not GDP directly",
+        "Avoid making causal policy claims from a correlational OLS model"
+      ]
+    },
+    {
+      "error_id": "simultaneity_bias",
+      "severity": "major",
+      "location": "Model Specification / Key Findings (all three variables simultaneously determined)",
+      "keywords_required": [
+        "simultaneity",
+        "simultaneity bias",
+        "simultaneous equations",
+        "system of equations",
+        "endogenous",
+        "inflation",
+        "interest rate",
+        "Federal Reserve",
+        "jointly determined"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["simultaneity", "endogenous"],
+      "canonical_explanation": "GDP growth, unemployment, inflation, and the federal funds rate are all jointly determined by the macro economy and Federal Reserve policy in a simultaneous system. The Fed sets the funds rate in response to current GDP growth and inflation (Taylor Rule). Inflation responds to GDP growth and unemployment (Phillips Curve). Unemployment responds to GDP growth (Okun's Law). Including these simultaneously-determined variables as independent predictors in OLS violates the exogeneity assumption, producing inconsistent coefficient estimates. A system of simultaneous equations or a Structural VAR is needed to properly model these relationships.",
+      "valid_corrections": [
+        "Use a Structural VAR (SVAR) or Simultaneous Equations Model (SEM)",
+        "Use instrumental variables where instruments only affect one endogenous variable",
+        "Use lagged values of the regressors as instruments (assuming predetermined lagged variables)",
+        "Apply Two-Stage Least Squares (2SLS) for each equation in the system"
+      ]
+    },
+    {
+      "error_id": "linear_model_misspecification",
+      "severity": "major",
+      "location": "Model Specification (linear model for what is known to be non-linear)",
+      "keywords_required": [
+        "non-linear",
+        "log transformation",
+        "misspecification",
+        "functional form",
+        "Phillips curve",
+        "convex",
+        "quadratic",
+        "nonlinear relationship"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["non-linear", "misspecification"],
+      "canonical_explanation": "Economic theory and empirical evidence suggest the relationships between GDP, unemployment, and inflation are non-linear. The Phillips Curve (inflation vs unemployment) is typically concave or exhibits threshold effects. The relationship between interest rates and GDP is non-linear (near-zero rates have different effects than high rates). Using a linear model imposes a constant marginal effect across the full range of values (0% to 19% fed funds rate, 3.8% to 14.7% unemployment). This misspecification leads to biased estimates at extreme values and incorrect extrapolation. Log transformations, quadratic terms, or splines are commonly used.",
+      "valid_corrections": [
+        "Use log transformations for growth rate variables (log GDP growth, log unemployment)",
+        "Add quadratic terms for variables with known non-linear effects",
+        "Use spline regression to allow flexible functional forms",
+        "Consult macroeconomic theory to specify the appropriate functional form"
+      ]
+    },
+    {
+      "error_id": "measurement_error_propagation",
+      "severity": "minor",
+      "location": "Measurement Note section (CPI has ±0.3pp uncertainty)",
+      "keywords_required": [
+        "measurement error",
+        "attenuation bias",
+        "errors in variables",
+        "CPI",
+        "0.3 percentage points",
+        "bias toward zero",
+        "coefficient",
+        "classical measurement error"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["measurement error", "bias"],
+      "canonical_explanation": "The report notes that CPI estimates have ±0.3 percentage point measurement uncertainty, but does not account for the statistical consequences. Classical measurement error in an independent variable causes attenuation bias: the OLS coefficient on the mismeasured variable (CPI) is biased toward zero. The true effect of inflation on GDP growth is likely larger than the reported 0.38. Additionally, measurement errors are correlated over time (BLS uses consistent methodology), violating the classical errors-in-variables assumption. Errors-in-variables regression or simulation extrapolation (SIMEX) methods can correct for this bias.",
+      "valid_corrections": [
+        "Report that the CPI coefficient is biased toward zero due to measurement error",
+        "Use errors-in-variables regression or SIMEX to correct for measurement error",
+        "Use an alternative inflation measure (PCE deflator) as a robustness check",
+        "Quantify the magnitude of potential attenuation bias using the known error variance"
+      ]
+    }
+  ]
+}

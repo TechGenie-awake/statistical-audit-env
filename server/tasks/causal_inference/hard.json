@@ -1,0 +1,119 @@
+{
+  "task_id": "causal_inference_hard",
+  "difficulty": "hard",
+  "domain": "causal_inference",
+  "title": "Job Training Program Earnings Impact Study",
+  "report_text": "# Policy Evaluation: JobBridge Training Program Effect on Annual Earnings\n\n## Executive Summary\nWe evaluated the causal effect of the JobBridge 6-month vocational training program on participants' annual earnings using a difference-in-differences design and instrumental variable approach. Results show the program increased annual earnings by $4,200 (95% CI: $3,100–$5,300). We recommend expanding funding.\n\n## Study Design\n- **Program**: 6-month vocational training (carpentry, electrical, HVAC)\n- **Participants**: 2,400 program completers (2019–2022)\n- **Control**: 8,000 non-participants from same county employment records\n- **Outcome**: Annual earnings (Year 1 and Year 2 post-program)\n\n## Difference-in-Differences Analysis\n\n**Pre/Post Earnings ($):**\n\n| Group | Pre-program | Post-program | Change |\n|-------|-------------|--------------|--------|\n| Treatment | $28,400 | $33,100 | +$4,700 |\n| Control | $31,200 | $32,700 | +$1,500 |\n\n**DiD Estimate**: $4,700 - $1,500 = **+$3,200**\n\n**Parallel Trends Verification:**\nWe verified parallel trends using 2 years of pre-program data:\n- 2017: Treatment earnings grew +3.2%, Control earnings grew +5.8%\n- 2018: Treatment earnings grew +2.9%, Control earnings grew +6.1%\n\n## Instrumental Variable Analysis\n\nTo further validate causality, we used **distance to the nearest JobBridge training center** as an instrumental variable for program participation.\n\n**First Stage**: Distance negatively predicts participation (F = 42.3, p < 0.001). Closer proximity increases participation by 18% per 10-mile reduction in distance.\n\n**IV Estimate**: $4,200 (SE = $612, p < 0.001)\n\n## Social Network Analysis\nParticipants frequently report helping their family members and neighbors find jobs and sharing skills learned in the program. We note this as a positive externality of the training program.\n\n## Recommendation\nExpand JobBridge funding. The rigorous IV design provides strong causal evidence of a $4,200 earnings boost. Cost-benefit analysis shows $3.20 return per $1 invested.",
+  "metadata": {
+    "sample_size": 10400,
+    "study_type": "quasi-experimental",
+    "design": "DiD + IV",
+    "domain": "workforce development / policy evaluation",
+    "iv_instrument": "distance_to_training_center"
+  },
+  "data_summary": "2,400 program completers, 8,000 controls from same county. Pre-period trends differ: treatment group grew earnings at 3% annually, control at 6% annually (2017-2018). Distance to training center used as IV. Participants frequently share skills with neighbors (spillover). Network analysis in report.",
+  "test_details": "DiD estimator. Parallel trends assumption tested using 2 pre-periods showing divergent trends. IV: distance to training center. Exclusion restriction untested. Spillover effects acknowledged in text as 'positive externality' but not modeled.",
+  "ground_truth_errors": [
+    {
+      "error_id": "parallel_trends_violated",
+      "severity": "critical",
+      "location": "Parallel Trends Verification section (treatment +3.2%/+2.9%, control +5.8%/+6.1% pre-period)",
+      "keywords_required": [
+        "parallel trends",
+        "pre-trends",
+        "divergent",
+        "different growth rates",
+        "assumption violated",
+        "DiD",
+        "difference-in-differences",
+        "counterfactual",
+        "3.2%",
+        "5.8%"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["parallel trends", "violated"],
+      "canonical_explanation": "The pre-period earnings growth rates are dramatically different between treatment and control groups: treatment grew at ~3% annually while control grew at ~6% annually in 2017-2018. This is strong evidence that the parallel trends assumption is violated. DiD requires that in the absence of treatment, both groups would have followed the same trend. When pre-trends diverge, the DiD estimate is biased — part of the post-treatment difference reflects this pre-existing divergence, not the treatment effect. The report acknowledges the pre-trends data but incorrectly presents it as 'verification' when it actually refutes the validity of the DiD design.",
+      "valid_corrections": [
+        "Use a pre-trends test (regression of outcome on treatment × time interaction in pre-period) to formally test the assumption",
+        "Apply a synthetic control method to find a better counterfactual match",
+        "Use a matching estimator to find control units with similar pre-period trends",
+        "Acknowledge the violated assumption and present the DiD as an upper/lower bound with caveats"
+      ]
+    },
+    {
+      "error_id": "iv_exclusion_restriction_violated",
+      "severity": "critical",
+      "location": "Instrumental Variable Analysis section (distance to training center as IV)",
+      "keywords_required": [
+        "exclusion restriction",
+        "instrumental variable",
+        "instrument validity",
+        "distance",
+        "earnings",
+        "direct effect",
+        "IV assumption",
+        "invalid instrument",
+        "violates"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["exclusion restriction", "instrument"],
+      "canonical_explanation": "The exclusion restriction for an instrumental variable requires that the instrument (distance to training center) affects earnings ONLY through the treatment channel (program participation). However, distance to a training center is correlated with many other earnings determinants: urban vs rural location (rural areas have lower average wages), access to public transit and jobs, local labor market conditions, and neighborhood economic development. People who live far from training centers tend to live in rural or economically disadvantaged areas with lower baseline earnings regardless of program participation. Thus, distance has a direct effect on earnings beyond training access, violating the exclusion restriction and biasing the IV estimate.",
+      "valid_corrections": [
+        "Use a different instrument: random assignment to program slots (lottery-based allocation)",
+        "Control for urban/rural status, local unemployment rate, and other location confounders",
+        "Test the exclusion restriction by checking if distance predicts earnings among those who never could participate (e.g., wrong trade skills)",
+        "Use a regression discontinuity design if there is a distance cutoff for program eligibility"
+      ]
+    },
+    {
+      "error_id": "sutva_spillover_violation",
+      "severity": "major",
+      "location": "Social Network Analysis section (participants help neighbors find jobs)",
+      "keywords_required": [
+        "SUTVA",
+        "stable unit treatment value assumption",
+        "spillover",
+        "interference",
+        "network effect",
+        "control group",
+        "contamination",
+        "neighbors",
+        "family members"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["SUTVA", "spillover"],
+      "canonical_explanation": "The report explicitly mentions that program participants 'frequently help their family members and neighbors find jobs' — this is a SUTVA (Stable Unit Treatment Value Assumption) violation, not just a 'positive externality.' SUTVA requires that each unit's outcome depends only on its own treatment status. When treated participants help untreated control group members find jobs, control group earnings rise due to the treatment, making the control group an invalid counterfactual. This biases the treatment effect estimate downward (control outcomes rise, narrowing the DiD gap), and both the DiD and IV estimates are contaminated by spillover. The true effect of the program is larger than reported.",
+      "valid_corrections": [
+        "Use cluster-level randomization (randomize by neighborhood or community) to contain spillovers",
+        "Model spillovers explicitly using spatial econometrics or network analysis",
+        "Compare to a geographically isolated control group not in the same social network",
+        "Estimate spillover effects as a separate parameter alongside the direct effect"
+      ]
+    },
+    {
+      "error_id": "self_selection_into_treatment",
+      "severity": "major",
+      "location": "Study Design (participants are program completers, not enrollees)",
+      "keywords_required": [
+        "selection",
+        "completers",
+        "complier",
+        "attrition",
+        "self-selection",
+        "intent to treat",
+        "per protocol",
+        "dropout",
+        "enrollees"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["completers", "selection"],
+      "canonical_explanation": "The study analyzes '2,400 program completers' — those who finished the full 6-month program. This excludes program dropouts (those who enrolled but did not complete). Completers are a self-selected, positively biased group: they are more motivated, had fewer disruptions (job offers, health issues, family emergencies), and likely had better baseline outcomes than dropouts. The earnings effect estimated for completers overstates the effect for a typical enrollee. An intent-to-treat (ITT) analysis (comparing all program enrollees to control, regardless of completion) would give an unbiased estimate of the program's effect at scale.",
+      "valid_corrections": [
+        "Report intent-to-treat (ITT) estimates based on all enrollees, not just completers",
+        "Report completion rates and analyze dropout predictors",
+        "Use a LATE (local average treatment effect) IV estimate that accounts for non-compliance",
+        "Separately analyze completers vs dropouts to understand heterogeneous effects"
+      ]
+    }
+  ]
+}

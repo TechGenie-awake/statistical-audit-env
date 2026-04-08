@@ -1,0 +1,69 @@
+{
+  "task_id": "regression_easy",
+  "difficulty": "easy",
+  "domain": "regression",
+  "title": "House Price Prediction Model",
+  "report_text": "# Regression Analysis: House Price Prediction\n\n## Executive Summary\nWe built a linear regression model to predict house sale prices using property characteristics. The model achieves an R² of 0.71 on our dataset of 1,200 homes sold in 2023. Our analysis identifies square footage, number of bedrooms, and number of bathrooms as the key drivers of price.\n\n## Model Specification\n\n**Dependent variable**: Sale price (USD)\n\n**Independent variables**:\n- Square footage (continuous)\n- Number of bedrooms (integer)\n- Number of bathrooms (continuous)\n\n**Equation**: Price = -$42,000 + $187 × SqFt + $8,200 × Bedrooms + $11,500 × Bathrooms\n\n## Model Performance\n- **R² = 0.71** (model explains 71% of price variation)\n- **RMSE = $48,200**\n- **All coefficients statistically significant** (p < 0.01 for all predictors)\n\n## Residual Analysis\n\nWe examined model residuals to verify assumptions:\n\n| Price Quartile | Mean Residual | Std Dev of Residuals |\n|---------------|---------------|---------------------|\n| Q1 (< $250K) | +$2,100 | $18,400 |\n| Q2 ($250K–$400K) | -$1,200 | $31,600 |\n| Q3 ($400K–$600K) | +$800 | $67,300 |\n| Q4 (> $600K) | -$3,400 | $112,800 |\n\n## Key Findings\n- Each additional 100 sq ft adds ~$18,700 to the price\n- An extra bedroom adds $8,200\n- An extra bathroom adds $11,500\n\n## Recommendations\nThis model can be deployed to estimate property values for our real estate platform. R² of 0.71 indicates strong predictive power. The coefficients provide clear, interpretable price signals for buyers and sellers.",
+  "metadata": {
+    "sample_size": 1200,
+    "model_type": "linear regression",
+    "predictors": ["square_footage", "bedrooms", "bathrooms"],
+    "r_squared": 0.71,
+    "rmse": 48200,
+    "domain": "real estate"
+  },
+  "data_summary": "1,200 home sales from a single metro area in 2023. Features collected: sqft, bedrooms, bathrooms. Location data (zip code, neighborhood) was available but not included in the model. Residual std dev grows from $18K in Q1 to $112K in Q4.",
+  "test_details": "OLS linear regression. Heteroskedasticity-robust standard errors not computed. Location variables excluded. Model trained and evaluated on same dataset (no train/test split reported).",
+  "ground_truth_errors": [
+    {
+      "error_id": "omitted_variable_bias",
+      "severity": "critical",
+      "location": "Model Specification section (only sqft, bedrooms, bathrooms included)",
+      "keywords_required": [
+        "omitted variable",
+        "location",
+        "neighborhood",
+        "zip code",
+        "confounding",
+        "omitted variable bias",
+        "endogeneity",
+        "correlated",
+        "unobserved"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["omitted", "variable"],
+      "canonical_explanation": "The model excludes location (zip code, neighborhood) despite it being the most important driver of house prices. Location is strongly correlated with both the outcome (price) and with the included predictors (e.g., wealthy neighborhoods have larger homes). This creates omitted variable bias: the coefficients on square footage, bedrooms, and bathrooms absorb the location effect, making them biased and uninterpretable. A house in Beverly Hills with 1,500 sq ft sells for far more than a 1,500 sq ft house in a rural area — the model cannot distinguish these cases and will systematically misprice both.",
+      "valid_corrections": [
+        "Include zip code or neighborhood as a categorical fixed effect",
+        "Use geographic clustering or spatial regression to account for location effects",
+        "Include median neighborhood income, school ratings, or crime rates as location proxies",
+        "Use a hierarchical model with location as a grouping variable"
+      ]
+    },
+    {
+      "error_id": "heteroskedasticity",
+      "severity": "major",
+      "location": "Residual Analysis table (std dev grows from $18K to $112K across quartiles)",
+      "keywords_required": [
+        "heteroskedasticity",
+        "heteroscedasticity",
+        "non-constant variance",
+        "variance",
+        "residuals",
+        "confidence intervals",
+        "standard errors",
+        "Q4",
+        "higher prices"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["heteroskedasticity", "variance"],
+      "canonical_explanation": "The residual analysis table clearly shows that the standard deviation of residuals increases dramatically with price: $18,400 in Q1 (cheap homes) vs $112,800 in Q4 (expensive homes) — a 6x increase. This is textbook heteroskedasticity. OLS assumes constant residual variance (homoskedasticity). When this is violated, the standard errors and confidence intervals for all coefficients are incorrect (typically underestimated for expensive homes), making significance tests unreliable. The model's confidence intervals will be far too narrow for expensive home predictions.",
+      "valid_corrections": [
+        "Use heteroskedasticity-robust (White) standard errors",
+        "Apply a log transformation to the dependent variable (log-linear model reduces heteroskedasticity)",
+        "Use weighted least squares (WLS) with weights proportional to predicted variance",
+        "Use a generalized least squares (GLS) model"
+      ]
+    }
+  ]
+}

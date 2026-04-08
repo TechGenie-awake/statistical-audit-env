@@ -1,0 +1,94 @@
+{
+  "task_id": "causal_inference_medium",
+  "difficulty": "medium",
+  "domain": "causal_inference",
+  "title": "Email Marketing Campaign ROI Analysis",
+  "report_text": "# Causal Analysis: Email Campaign Impact on Purchase Conversions\n\n## Executive Summary\nWe estimated the causal effect of our November email campaign on purchases. Customers who received the campaign email were 34% more likely to make a purchase within 7 days (p < 0.001). The campaign generated an estimated $2.4M in incremental revenue. We recommend expanding email marketing investments by 40%.\n\n## Study Design\n- **Treatment**: Received promotional email on November 1, 2023\n- **Control**: Did not receive email\n- **Outcome**: Made a purchase within 7 days of November 1\n- **Sample**: 180,000 customers in our CRM (90,000 treatment, 90,000 control)\n\n## Selection Criteria\nEmails were sent to customers identified as 'highly engaged' by our engagement scoring system:\n- Opened at least 3 emails in the past 60 days\n- Made a purchase in the last 90 days\n- NPS score ≥ 7 (promoters)\n\nControl group: customers not meeting the engagement threshold.\n\n## Results\n\n| Group | n | Purchased (7 days) | Conversion Rate |\n|-------|---|------------------|-----------------|\n| Treatment (email) | 90,000 | 18,720 | 20.8% |\n| Control (no email) | 90,000 | 11,700 | 13.0% |\n\n**Difference**: +7.8 percentage points (p < 0.001)\n**Relative lift**: +60% (not 34% as stated in summary — corrected below)\n\n## Timing Analysis\nThe campaign ran from November 1–7, 2023. This period coincides with the beginning of the holiday shopping season, when consumer spending typically increases by 15–25% compared to October baselines.\n\n## Controlling for Purchase History\nTo refine our estimate, we controlled for number of purchases made AFTER the campaign (Nov 8–30) as a proxy for 'customer purchase intent.' After this adjustment, the email effect was 23% (still significant).\n\n## Recommendation\nThe email campaign clearly caused a 23% lift in conversions. Scale email marketing aggressively — our models show $6M potential if we send to all customers.",
+  "metadata": {
+    "sample_size": 180000,
+    "study_type": "observational",
+    "treatment": "email_campaign",
+    "outcome": "purchase_within_7_days",
+    "domain": "email marketing / e-commerce",
+    "randomized": false
+  },
+  "data_summary": "180K customers. Treatment group pre-selected for high engagement (opened 3+ emails, recent purchase, high NPS). Control group is non-engaged customers. Campaign ran Nov 1-7, coinciding with start of holiday season. Post-campaign purchases (Nov 8-30) used as a control variable.",
+  "test_details": "Non-randomized observational study. Selection into treatment based on engagement score. No randomization. Difference computed as simple difference in means. Post-treatment variable (Nov 8-30 purchases) included as control.",
+  "ground_truth_errors": [
+    {
+      "error_id": "selection_bias",
+      "severity": "critical",
+      "location": "Selection Criteria section / Study Design (treatment group pre-selected for high engagement)",
+      "keywords_required": [
+        "selection bias",
+        "non-random",
+        "engagement",
+        "highly engaged",
+        "confounding",
+        "cherry-picked",
+        "observational",
+        "treatment group",
+        "comparable"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["selection", "bias"],
+      "canonical_explanation": "The treatment group was deliberately selected for high engagement (opened 3+ emails, recent purchase, high NPS) while the control group consists of low-engagement customers. These groups are fundamentally different in their baseline purchase propensity — highly engaged customers would purchase more even without the email. The observed 7.8 percentage point difference reflects pre-existing differences between groups, not the causal effect of the email. This is classic selection bias in an observational study. A randomized experiment (randomly sending to some engaged customers but not others) would be needed for causal identification.",
+      "valid_corrections": [
+        "Randomize within the engaged segment: send emails to a random 50% of qualified customers",
+        "Use propensity score matching to find comparable control customers",
+        "Use a difference-in-differences design with historical purchase data as baseline",
+        "Use regression discontinuity if there is a sharp threshold in the engagement score"
+      ]
+    },
+    {
+      "error_id": "confounding_holiday_season",
+      "severity": "major",
+      "location": "Timing Analysis section (campaign coincides with holiday shopping start)",
+      "keywords_required": [
+        "confounding",
+        "holiday",
+        "seasonality",
+        "November",
+        "confounder",
+        "common cause",
+        "time period",
+        "external factor",
+        "spurious"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["confounding", "holiday"],
+      "canonical_explanation": "The campaign ran during the first week of November, coinciding with the beginning of the holiday shopping season. Consumer spending typically rises 15-25% in November compared to October. This seasonal effect is a confounding variable: it independently causes higher purchase rates in both groups, but it differentially affects the treatment group more if those customers are more purchase-ready heading into the holidays. The report acknowledges the seasonality but does not control for it. The 20.8% conversion rate in the treatment group may reflect holiday spending, not email effectiveness. An appropriate pre-period baseline comparison or control group matched on the same time window in prior years is needed.",
+      "valid_corrections": [
+        "Compare to the same week in prior years (difference-in-differences: DiD estimator)",
+        "Use a holdout group from the same engaged segment as a concurrent control",
+        "Use the 7 days before the campaign as a baseline and apply DiD",
+        "Adjust for seasonal trends using historical conversion rate data"
+      ]
+    },
+    {
+      "error_id": "post_treatment_bias_collider",
+      "severity": "critical",
+      "location": "Controlling for Purchase History section (post-campaign purchases used as control)",
+      "keywords_required": [
+        "post-treatment",
+        "collider",
+        "collider bias",
+        "post-treatment variable",
+        "conditioning",
+        "mediator",
+        "future purchases",
+        "Nov 8",
+        "downstream"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["post-treatment", "collider"],
+      "canonical_explanation": "The analysis controls for 'number of purchases made after the campaign (Nov 8-30)' as a proxy for purchase intent. This is a post-treatment variable — a variable measured after the treatment was applied that may itself be caused by the treatment. Controlling for a post-treatment variable (or collider) introduces bias. If the email caused some customers to purchase in Nov 8-30 as well, removing that variation also removes part of the true treatment effect. The resulting '23% lift' after this adjustment is biased and uninterpretable. Only pre-treatment variables should be used as controls in a causal analysis.",
+      "valid_corrections": [
+        "Remove the post-campaign purchase variable from the analysis entirely",
+        "Only use baseline variables measured before November 1 as controls",
+        "If intent is needed as a control, measure it with pre-period behavior (e.g., October purchase rate)",
+        "Use a DAG (directed acyclic graph) to identify which variables can be safely conditioned on"
+      ]
+    }
+  ]
+}

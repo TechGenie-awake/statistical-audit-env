@@ -1,0 +1,169 @@
+{
+  "task_id": "causal_inference_very_hard",
+  "difficulty": "very_hard",
+  "domain": "causal_inference",
+  "title": "Content Recommendation Multi-Armed Bandit Optimization",
+  "report_text": "# Technical Report: Thompson Sampling Content Recommender — Performance Analysis\n\n## Executive Summary\nWe deployed a Thompson Sampling multi-armed bandit for content recommendation, replacing our previous round-robin baseline. After 180 days and 50M+ recommendations, the system achieves O(log T) cumulative regret as predicted by theory and shows an average CTR improvement of 19.3% over baseline. The system has been optimized and is ready for full production deployment.\n\n## System Architecture\n\n**Arms**: 200 content categories (tech, sports, entertainment, ..., politics)\n**Context**: User demographic features (age group, geography, device)\n**Reward**: Click (1) or no-click (0)\n**Prior**: Uniform Beta(1,1) for each arm at initialization\n**Update rule**: After each episode (daily batch update), sample from posterior and serve the arm with highest sample\n\n## Theoretical Regret Analysis\n\nFor a K-armed bandit with T rounds, Thompson Sampling achieves:\n\n**Claimed**: Cumulative regret R(T) = O(K log T)\n\nOur empirical regret calculation:\n- T = 50,000,000 recommendations over 180 days\n- K = 200 arms\n- Measured cumulative regret: 4.2M clicks below optimal (oracle)\n- O(200 × log(50M)) = O(200 × 17.7) ≈ 3,540 (constant factor absorbed)\n- We observe this is within theoretically predicted bounds.\n\n## Stationarity Analysis\nContent CTR by category was measured across three 60-day windows:\n\n| Category | Days 1–60 CTR | Days 61–120 CTR | Days 121–180 CTR |\n|----------|--------------|-----------------|------------------|\n| Sports | 8.2% | 11.4% (World Cup) | 7.1% |\n| Politics | 5.1% | 4.8% | 9.3% (Election) |\n| Tech | 6.3% | 6.1% | 6.4% |\n| Entertainment | 7.8% | 7.2% | 7.5% |\n\nNote: Sports and Politics show variation due to real-world events. Tech and Entertainment remain stable. Overall system CTR remained consistent at ~7.2% across all periods.\n\n## Context Correlation Analysis\nUser features used as context:\n- Age group: 18-24, 25-34, 35-44, 45-54, 55+\n- Geography: 8 regions\n- Device: mobile, desktop, tablet\n\nCorrelation matrix shows high inter-correlation:\n- Age and device: ρ = 0.82 (younger users prefer mobile)\n- Geography and age: ρ = 0.71 (regional demographic clustering)\n\n## Bayesian Prior Specification\nWe initialized all 200 arms with Beta(1,1) (uniform) priors at experiment start. This is the standard uninformative prior for binomial outcomes and ensures no initial bias toward any content category.\n\n## Update Frequency\nThe Thompson Sampling posterior is updated in nightly batch jobs (once per 24 hours). This ensures computational efficiency — updating after each individual recommendation would be too computationally expensive.",
+  "metadata": {
+    "sample_size": 50000000,
+    "algorithm": "Thompson Sampling",
+    "arms": 200,
+    "context_features": ["age_group", "geography", "device"],
+    "update_frequency": "daily_batch",
+    "prior": "Beta(1,1) uniform",
+    "domain": "content recommendation"
+  },
+  "data_summary": "50M recommendations over 180 days. 200 content arms. CTR varies dramatically across time (Sports: 8.2% → 11.4% → 7.1%; Politics: 5.1% → 4.8% → 9.3%). Context features highly correlated (age vs device: 0.82, geography vs age: 0.71). Daily batch updates. Uniform prior despite 18 months of historical CTR data available.",
+  "test_details": "Thompson Sampling with Beta-Bernoulli conjugate. Daily batch updates (not per-recommendation). Regret calculated as deviation from oracle. O(log T) regret claimed but switching between non-stationary arms complicates theoretical bounds. Historical data available but not used for prior.",
+  "ground_truth_errors": [
+    {
+      "error_id": "nonstationarity_ignored",
+      "severity": "critical",
+      "location": "Stationarity Analysis table / System Architecture (Sports CTR swings 8.2%-11.4%-7.1%)",
+      "keywords_required": [
+        "non-stationary",
+        "nonstationarity",
+        "stationary",
+        "world cup",
+        "election",
+        "context switching",
+        "reward drift",
+        "temporal",
+        "changing environment"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["non-stationary", "stationary"],
+      "canonical_explanation": "The Stationarity Analysis table clearly shows non-stationary reward distributions: Sports CTR swings from 8.2% to 11.4% (during World Cup) back to 7.1%; Politics surges from 4.8% to 9.3% during election season. Standard Thompson Sampling assumes the arm reward distributions are stationary (fixed over time). When rewards shift due to external events, the learned posteriors become stale and misleading — the system over-exploits arms that were good during the World Cup and under-explores them after. Non-stationary bandits require discounting (sliding window Thompson Sampling, discounted UCB) or change-point detection algorithms. The theoretical O(log T) regret bounds also do not hold for non-stationary environments.",
+      "valid_corrections": [
+        "Use sliding-window Thompson Sampling (only use recent N observations for each arm's posterior)",
+        "Apply discounted Thompson Sampling with a forgetting factor λ < 1",
+        "Implement change-point detection to reset arm posteriors when distribution shifts are detected",
+        "Use Bayesian online learning that explicitly models temporal drift in arm means"
+      ]
+    },
+    {
+      "error_id": "regret_bound_miscalculated",
+      "severity": "major",
+      "location": "Theoretical Regret Analysis section (O(log T) claim vs O(sqrt(T)) reality)",
+      "keywords_required": [
+        "regret bound",
+        "O(log T)",
+        "O(sqrt T)",
+        "theoretical bound",
+        "non-stationary",
+        "context switching",
+        "lower bound",
+        "minimax regret",
+        "asymptotic"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["regret bound", "O(log T)"],
+      "canonical_explanation": "The report claims O(K log T) cumulative regret, which is the correct bound for stationary Thompson Sampling. However, given the demonstrated non-stationarity (Sports and Politics arms shift significantly across 60-day periods), the O(log T) bound does not apply. For non-stationary bandits, the minimax optimal regret is O(√(KT)) — a dramatically worse bound. With K=200 and T=50M, O(√(200 × 50M)) ≈ O(3.16M) vs the claimed O(200 × 17.7) ≈ O(3,540). The '4.2M clicks below optimal' is consistent with the non-stationary bound, not the claimed stationary bound. The report's comparison is therefore misleading.",
+      "valid_corrections": [
+        "Apply the correct regret bound for non-stationary environments: O(sqrt(KT)) or O(T^(2/3)) for piecewise-stationary",
+        "Use the Auer et al. (2002) Exp3 algorithm which has O(sqrt(KT log K)) regret for adversarial environments",
+        "Acknowledge that non-stationarity invalidates the O(log T) theoretical guarantee",
+        "Empirically measure regret against a non-stationary oracle that knows future reward shifts"
+      ]
+    },
+    {
+      "error_id": "uninformative_prior_misspecified",
+      "severity": "major",
+      "location": "Bayesian Prior Specification section (Beta(1,1) uniform prior despite available historical data)",
+      "keywords_required": [
+        "prior",
+        "uninformative prior",
+        "informative prior",
+        "historical data",
+        "Beta(1,1)",
+        "warm start",
+        "prior misspecification",
+        "Bayesian",
+        "18 months"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["prior", "historical data"],
+      "canonical_explanation": "The system initialized all 200 arms with a uniform Beta(1,1) prior, ignoring 18+ months of historical CTR data. This is prior misspecification: the Beta(1,1) prior represents complete ignorance about each arm's CTR, but the system has extensive historical evidence that some arms (e.g., Sports ≈ 8%, Tech ≈ 6.3%) perform systematically better than others. Using an uninformative prior forces the bandit to re-learn arm quality from scratch over many exploration rounds, unnecessarily wasting recommendations on arms known to perform poorly. Setting informative priors (e.g., Beta(α, β) fitted from historical CTR for each arm) would dramatically reduce initial regret during the warm-up phase and accelerate convergence.",
+      "valid_corrections": [
+        "Fit Beta(α, β) priors from historical CTR data: α = historical_clicks, β = historical_non_clicks (scaled)",
+        "Use empirical Bayes to estimate prior hyperparameters from historical data",
+        "Initialize with a warm-start posterior rather than the prior after observing historical data",
+        "Document the decision to use uninformative priors and quantify the regret cost of this choice"
+      ]
+    },
+    {
+      "error_id": "batch_update_thompson_sampling_bug",
+      "severity": "critical",
+      "location": "Update Frequency section (daily batch update instead of per-recommendation update)",
+      "keywords_required": [
+        "batch update",
+        "daily",
+        "per-recommendation",
+        "Thompson sampling",
+        "posterior",
+        "update frequency",
+        "stale",
+        "exploration",
+        "implementation"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["batch update", "Thompson sampling"],
+      "canonical_explanation": "The Thompson Sampling posterior is updated once per 24 hours (nightly batch), not after each individual recommendation. This is a fundamental implementation error. Thompson Sampling's key property — matching the exploration probability to the posterior probability of each arm being optimal — depends on the posterior reflecting current evidence. With daily batch updates, the same sampled arm selection is used for potentially hundreds of thousands of recommendations with a stale posterior. This degrades TS to nearly the equivalent of epsilon-greedy within each day's batch, eliminating the adaptive exploration benefits and inflating regret. Modern implementations use Lazyvar/decoupled sampling or incremental updates to maintain efficiency.",
+      "valid_corrections": [
+        "Update the posterior after each individual recommendation (or at minimum after each session)",
+        "Use lazy Thompson Sampling: sample from posterior once per request using accumulated sufficient statistics",
+        "If batch updates are required for computational reasons, use much shorter batch intervals (hourly)",
+        "Implement incremental posterior updates using conjugate update rules (O(1) per update for Beta-Bernoulli)"
+      ]
+    },
+    {
+      "error_id": "contextual_bandit_degeneracy",
+      "severity": "major",
+      "location": "Context Correlation Analysis section (age vs device: 0.82, geography vs age: 0.71)",
+      "keywords_required": [
+        "multicollinearity",
+        "correlated context",
+        "contextual bandit",
+        "degenerate",
+        "collinear",
+        "arm differentiation",
+        "redundant features",
+        "correlation",
+        "0.82"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["correlated context", "degeneracy"],
+      "canonical_explanation": "The contextual bandit uses three context features with very high inter-correlations (age vs device: ρ=0.82, geography vs age: ρ=0.71). In a contextual bandit, each unique context combination defines a separate arm selection problem. With highly correlated context features, the effective number of distinct context vectors is far smaller than the product of individual feature levels (5 × 8 × 3 = 120 unique combinations), because many combinations rarely or never occur (e.g., young users on desktop in rural areas). This leads to poor arm differentiation: context vectors that are similar (but distinct) receive very different treatment due to sparse posterior data for each unique context, and the algorithm fails to generalize across correlated context dimensions.",
+      "valid_corrections": [
+        "Apply PCA or SVD to the context features to create orthogonal components",
+        "Use a linear contextual bandit (LinUCB or Linear Thompson Sampling) that shares information across correlated contexts",
+        "Apply dimensionality reduction or embed context features using a learned representation",
+        "Cluster similar contexts together to increase data per context bucket and stabilize estimates"
+      ]
+    },
+    {
+      "error_id": "premature_exploitation",
+      "severity": "major",
+      "location": "System Architecture / Update rule (converges after 100 samples per arm)",
+      "keywords_required": [
+        "exploitation",
+        "exploration",
+        "premature convergence",
+        "explore-exploit",
+        "100 samples",
+        "convergence",
+        "suboptimal arm",
+        "local optimum"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["premature", "exploitation"],
+      "canonical_explanation": "The system implicitly converges to pure exploitation once arms accumulate sufficient observations, as the Beta posterior becomes increasingly peaked around the estimated mean CTR. With 200 arms and 50M recommendations over 180 days (~277K recs/day), high-performing arms quickly accumulate thousands of observations with very tight posteriors, leading to near-zero probability of exploring lower-ranked arms. This premature convergence to a local optimum prevents discovery of arms that may have high CTR in specific untested contexts, or arms whose CTR has recently improved (non-stationarity). A minimum exploration rate or periodic forced exploration is needed.",
+      "valid_corrections": [
+        "Add a minimum exploration floor: with probability ε, choose a random arm regardless of posterior",
+        "Use Thompson Sampling with restart mechanisms that periodically reset arm posteriors",
+        "Implement Optimistic Thompson Sampling that inflates uncertainty for under-explored arms",
+        "Use a periodic audit: force random exploration of all arms for one day per month to detect drift"
+      ]
+    }
+  ]
+}

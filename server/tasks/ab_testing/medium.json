@@ -1,0 +1,92 @@
+{
+  "task_id": "ab_testing_medium",
+  "difficulty": "medium",
+  "domain": "ab_testing",
+  "title": "Social Media Stories Feature Rollout",
+  "report_text": "# A/B Test Results: Stories Feature Impact on User Engagement\n\n## Executive Summary\nWe tested our new 'Stories' feature across 50,000 users split into three groups. The Stories feature increased overall daily active usage by 8.3% (p = 0.002). We recommend a full rollout.\n\n## Methodology\n- **Sample Size**: 50,000 users (Control: 20,000 | Variant A — Stories visible: 16,667 | Variant B — Stories prominently featured: 13,333)\n- **Duration**: 4 weeks (January 2024)\n- **Randomization**: Users randomly assigned at account level\n- **Primary Metric**: Daily active usage (DAU) rate\n- **Secondary Metrics**: Time-on-app, content creation rate, 7-day retention\n\n## Segment Analysis\nWe analyzed engagement across age groups to ensure broad appeal:\n\n| Age Group | Control DAU | Treatment DAU | Δ |\n|-----------|------------|---------------|---|\n| 18–24 | 72% | 69% | -3% |\n| 25–34 | 61% | 58% | -3% |\n| 35–44 | 48% | 45% | -3% |\n| 45–54 | 35% | 32% | -3% |\n| 55+ | 22% | 20% | -2% |\n| **Overall** | **55%** | **59.6%** | **+8.3%** |\n\nNote: The overall lift is positive because younger, high-engagement users were more heavily represented in the treatment group due to targeting logic that preferentially assigned active users.\n\n## Engagement Analysis\nWe analyzed users who engaged with the Stories feature at least once:\n- Average sessions per day: +22% vs control\n- Average time-on-app: +31% vs control\n- Content creation: +18% vs control\n\n## Statistical Analysis\nUsed a two-sample t-test comparing overall DAU between treatment and control. p = 0.002, well below our α = 0.05 threshold.\n\n## Recommendation\nFull rollout of Stories. The 8.3% DAU improvement is statistically significant and economically meaningful. Users who engage with Stories show dramatically higher usage.",
+  "metadata": {
+    "sample_size": 50000,
+    "test_type": "A/B/C test",
+    "duration_days": 28,
+    "variants": 3,
+    "metrics_tested": 4,
+    "domain": "social media"
+  },
+  "data_summary": "50,000 users across 3 groups. Age distribution differs between groups — treatment skewed younger due to targeting logic. Only users who engaged at least once analyzed for secondary metrics. Raw data: DAU per user per day for 28 days.",
+  "test_details": "Two-sample t-test on overall DAU proportions. Binary outcome (engaged/not). Groups not balanced by age. Analysis of secondary metrics restricted to users who interacted with feature (engaged subset only).",
+  "ground_truth_errors": [
+    {
+      "error_id": "simpsons_paradox",
+      "severity": "critical",
+      "location": "Segment Analysis table / Executive Summary (overall positive, all segments negative)",
+      "keywords_required": [
+        "simpson's paradox",
+        "simpsons paradox",
+        "aggregation paradox",
+        "confounding",
+        "age group",
+        "segment",
+        "negative in all groups",
+        "composition",
+        "weighting"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["simpson", "paradox"],
+      "canonical_explanation": "The segment analysis reveals a classic Simpson's Paradox: the Stories feature decreased DAU in every single age group (-2% to -3%), yet the overall metric shows +8.3%. This occurs because younger users (who have higher baseline DAU) are disproportionately represented in the treatment group due to the targeting logic. The 'overall' improvement is entirely an artifact of group composition, not a real treatment effect. The true causal effect of Stories on engagement is negative across all segments.",
+      "valid_corrections": [
+        "Ensure treatment and control groups have identical age distributions through proper randomization",
+        "Report segment-level effects as primary evidence, not the overall average",
+        "Use regression adjustment or stratified analysis to control for age composition differences",
+        "Abandon targeting logic that creates compositional imbalance between groups"
+      ]
+    },
+    {
+      "error_id": "survivorship_bias",
+      "severity": "major",
+      "location": "Engagement Analysis section (analyzed only users who engaged with Stories)",
+      "keywords_required": [
+        "survivorship bias",
+        "survivor bias",
+        "selection bias",
+        "engaged users",
+        "subset",
+        "non-engagers",
+        "dropouts",
+        "post-treatment",
+        "conditioning on treatment"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["survivorship", "bias"],
+      "canonical_explanation": "The engagement metrics (+22% sessions, +31% time-on-app, +18% content creation) are computed only among users who engaged with the Stories feature at least once. This is survivorship bias: the analysis selects users based on a post-treatment outcome (choosing to engage), which by definition includes only users who liked the feature enough to use it. Users who were shown Stories and disengaged or churned are excluded. This makes the effect estimates wildly optimistic and non-causal.",
+      "valid_corrections": [
+        "Analyze all users in the treatment group, including those who never engaged with Stories",
+        "Use intent-to-treat analysis: compare all assigned-to-treatment vs all assigned-to-control",
+        "If per-engager analysis is desired, use appropriate causal methods (e.g., LATE/IV estimation)",
+        "Report dropout and churn rates as additional outcomes"
+      ]
+    },
+    {
+      "error_id": "wrong_statistical_test",
+      "severity": "minor",
+      "location": "Statistical Analysis section (t-test used for binary outcome)",
+      "keywords_required": [
+        "t-test",
+        "binary outcome",
+        "proportion",
+        "chi-square",
+        "z-test",
+        "binomial",
+        "wrong test",
+        "inappropriate test"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["t-test", "binary"],
+      "canonical_explanation": "The analysis used a two-sample t-test to compare DAU rates, but DAU is a binary outcome (each user either was active or not on a given day). For comparing proportions between groups, the appropriate test is a two-proportion z-test or chi-square test of independence, not a t-test. While with large samples (n=50,000) the t-test and z-test converge via CLT, using the wrong test signals methodological sloppiness and the confidence intervals may be slightly miscalibrated, especially for the smaller sub-group analyses.",
+      "valid_corrections": [
+        "Use a two-proportion z-test or chi-square test for binary outcomes",
+        "Use logistic regression for binary outcomes with covariates",
+        "For multi-group comparison (3 variants), use chi-square test rather than pairwise t-tests"
+      ]
+    }
+  ]
+}

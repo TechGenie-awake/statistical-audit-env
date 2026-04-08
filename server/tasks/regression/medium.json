@@ -1,0 +1,95 @@
+{
+  "task_id": "regression_medium",
+  "difficulty": "medium",
+  "domain": "regression",
+  "title": "Customer Churn Prediction Model",
+  "report_text": "# Predictive Model Report: Customer Churn Analysis\n\n## Executive Summary\nWe developed a linear regression model to predict customer churn probability using behavioral and demographic data. The model achieves exceptional accuracy (R² = 0.97 on training data) and identifies support ticket volume as the strongest predictor of churn. Immediate action on high-ticket customers is recommended.\n\n## Data & Features\n- **Dataset**: 85,000 customer accounts (12 months, 2023)\n- **Target**: Churn within next 30 days (binary: 0/1)\n- **Features**:\n  - Monthly active days (usage)\n  - Support tickets opened (last 30 days)\n  - Account age (months)\n  - Monthly spend ($)\n  - Contract type (month-to-month vs annual)\n  - NPS score (1–10)\n  - Feature adoption score (0–100)\n  - Days since last login\n\n## Model Results\n\n**Training Performance:**\n- R² = 0.97\n- RMSE = 0.038\n- All predictors significant at p < 0.001\n\n**Coefficient Estimates:**\n| Feature | Coefficient | p-value |\n|---------|-------------|--------|\n| Support tickets | +0.142 | < 0.001 |\n| Days since login | +0.018 | < 0.001 |\n| Monthly spend | -0.002 | < 0.001 |\n| Feature adoption | -0.004 | < 0.001 |\n| NPS score | -0.031 | < 0.001 |\n| Monthly active days | -0.009 | < 0.001 |\n| Account age | -0.001 | 0.003 |\n| Contract (annual) | -0.087 | < 0.001 |\n\n**Correlation Matrix (selected features):**\n| | Support tickets | Days since login | Monthly active |\n|---|---|---|---|\n| Support tickets | 1.0 | 0.91 | -0.89 |\n| Days since login | 0.91 | 1.0 | -0.94 |\n| Monthly active | -0.89 | -0.94 | 1.0 |\n\n## Key Insights\n1. **Support tickets are the #1 churn predictor**: Each additional ticket increases churn probability by 14.2%\n2. Customers who haven't logged in recently are at high risk\n3. Annual contract customers churn 8.7% less\n\n## Recommendation\nDeploy this model in production. Flag customers with >2 support tickets for immediate intervention. The R² = 0.97 confirms excellent predictive power.",
+  "metadata": {
+    "sample_size": 85000,
+    "model_type": "linear regression",
+    "target": "churn_binary",
+    "training_r_squared": 0.97,
+    "test_r_squared": null,
+    "domain": "SaaS / subscription business"
+  },
+  "data_summary": "85,000 customers. Binary churn label. Feature correlations extremely high (support tickets vs days since login: 0.91, monthly active vs days since login: -0.94). No train/test split performed. Endogenous features: support tickets are often filed by customers who have already decided to churn.",
+  "test_details": "Linear regression on binary outcome. No test/validation split. VIF not computed. No check for reverse causality. Full 85K dataset used for both training and evaluation.",
+  "ground_truth_errors": [
+    {
+      "error_id": "endogeneity_reverse_causality",
+      "severity": "critical",
+      "location": "Key Insights section (support tickets as #1 predictor) / Data & Features",
+      "keywords_required": [
+        "endogeneity",
+        "reverse causality",
+        "reverse causation",
+        "simultaneity",
+        "causal direction",
+        "support tickets",
+        "churn decision",
+        "already decided",
+        "confounded"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["reverse", "causality"],
+      "canonical_explanation": "The report claims support tickets cause churn, but the causal direction is likely reversed: customers who have already decided to churn file support tickets as part of their exit process (cancellation requests, data export help, billing disputes). Support ticket volume is thus an effect of the churn decision, not a cause. Using an endogenous variable (one that is simultaneously determined with the outcome) as a predictor leads to biased coefficient estimates. Intervening to reduce support tickets will not prevent churn — the churn decision is already made. The 14.2% coefficient is measuring correlation, not a causal effect.",
+      "valid_corrections": [
+        "Use temporal separation: only include tickets filed before the churn observation window",
+        "Use instrumental variables to isolate exogenous variation in support contacts",
+        "Conduct interviews or qualitative analysis to understand the causal mechanism",
+        "Remove or carefully re-specify support ticket timing to avoid post-decision contamination"
+      ]
+    },
+    {
+      "error_id": "multicollinearity",
+      "severity": "major",
+      "location": "Correlation Matrix (correlations of 0.91 and -0.94 between predictors)",
+      "keywords_required": [
+        "multicollinearity",
+        "collinearity",
+        "VIF",
+        "variance inflation factor",
+        "correlation",
+        "0.91",
+        "0.94",
+        "unstable",
+        "coefficients",
+        "high correlation"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["multicollinearity", "VIF"],
+      "canonical_explanation": "The correlation matrix shows extremely high intercorrelations between predictors: support tickets vs days since login = 0.91, monthly active vs days since login = -0.94. These correlations indicate severe multicollinearity. When predictors are this highly correlated, OLS cannot reliably separate their individual effects — small changes in data produce wildly different coefficient estimates. Variance Inflation Factors (VIF) for these features would exceed 10 (the standard warning threshold), meaning the standard errors are inflated and the individual coefficient interpretations are unreliable. The report should have computed and reported VIF.",
+      "valid_corrections": [
+        "Compute VIF for all predictors and report any VIF > 5 or 10 as a concern",
+        "Remove redundant predictors (e.g., keep only one of days_since_login or monthly_active_days)",
+        "Use Ridge regression or Lasso to handle multicollinearity",
+        "Use PCA to create orthogonal composite features before modeling"
+      ]
+    },
+    {
+      "error_id": "overfitting_no_test_split",
+      "severity": "critical",
+      "location": "Model Results section (R²=0.97 reported without test set performance)",
+      "keywords_required": [
+        "overfitting",
+        "train test split",
+        "test set",
+        "validation",
+        "out of sample",
+        "generalization",
+        "training data",
+        "holdout",
+        "cross validation"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["overfitting", "test"],
+      "canonical_explanation": "The R² = 0.97 is computed on the training data — the same data used to fit the model. This is not a valid measure of predictive performance. A model can achieve R² = 0.97 on training data by memorizing noise (overfitting), even if it would fail completely on new customers. The report provides no test set or cross-validation results. Given 8 predictors on 85,000 observations (a reasonable ratio), overfitting is plausible. The gap between training R²=0.97 and true generalization performance is unknown and likely substantial, especially given the multicollinearity issues.",
+      "valid_corrections": [
+        "Hold out 20-30% of data as a test set before model training",
+        "Use k-fold cross-validation to estimate out-of-sample performance",
+        "Report test set R² and RMSE alongside training metrics",
+        "Use time-based splits (train on earlier months, test on recent months) for temporal data"
+      ]
+    }
+  ]
+}

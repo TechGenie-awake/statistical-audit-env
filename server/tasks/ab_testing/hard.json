@@ -1,0 +1,141 @@
+{
+  "task_id": "ab_testing_hard",
+  "difficulty": "hard",
+  "domain": "ab_testing",
+  "title": "Ad Platform Bidding Algorithm Optimization",
+  "report_text": "# Multi-Armed Bandit Experiment: Adaptive Bidding Algorithm v2.0\n\n## Executive Summary\nWe evaluated a new Thompson Sampling-based bidding algorithm against our production epsilon-greedy baseline across 45 million ad impressions over 30 days. The new algorithm achieved a 12.4% improvement in CTR (p < 0.001) and a 7.8% improvement in conversion rate. We recommend immediate full traffic migration.\n\n## Experiment Design\n- **Traffic**: ~1.5M impressions/day, 30 days (Feb 1–March 2, 2024)\n- **Randomization**: Per-impression randomization (50/50 split)\n- **Variants**: Control (epsilon-greedy v1.0) vs Treatment (Thompson Sampling v2.0)\n- **Primary metric**: Click-through rate (CTR)\n- **Pre-registered**: Conversion rate was registered as primary metric in our experiment platform on Jan 28\n\n## Performance Over Time\n\n| Week | Control CTR | Treatment CTR | Lift | p-value |\n|------|------------|---------------|------|--------|\n| Week 1 | 2.1% | 2.8% | +33% | < 0.001 |\n| Week 2 | 2.2% | 2.5% | +14% | < 0.001 |\n| Week 3 | 2.3% | 2.4% | +4% | 0.12 |\n| Week 4 | 2.4% | 2.3% | -4% | 0.08 |\n| **Overall** | **2.25%** | **2.53%** | **+12.4%** | **< 0.001** |\n\n## User-Level Analysis\nTo validate results, we also computed per-user metrics by aggregating impressions to the user level:\n- Users in treatment: 892,411 unique users\n- Average CTR per user (treatment): 2.61%\n- Average CTR per user (control): 2.24%\n- This confirms the impression-level findings.\n\n## Clustering Considerations\nUsers may see multiple ads per day. We treat each impression as an independent observation, which allows for maximum statistical power given our large dataset. The large sample size (45M impressions) ensures our estimates are precise.\n\n## Recommendation\nMigrate all traffic to Thompson Sampling v2.0. CTR improvement of +12.4% is statistically and practically significant. The algorithm learns faster and adapts better to changing user preferences.",
+  "metadata": {
+    "sample_size": 45000000,
+    "test_type": "Multi-armed bandit experiment",
+    "duration_days": 30,
+    "variants": 2,
+    "primary_metric_prespecified": "conversion_rate",
+    "reported_metric": "ctr",
+    "domain": "ad platform"
+  },
+  "data_summary": "45M impressions, ~1.5M/day. ~890K unique users each. Multiple impressions per user (avg ~50). Per-impression and per-user data available. Week 1 CTR lift was +33%, collapsed to -4% by Week 4.",
+  "test_details": "Per-impression analysis (treats each impression as independent). Primary metric pre-registered as conversion rate but CTR reported as primary in results. Cluster-robust standard errors not computed. Network effects between users not modeled.",
+  "ground_truth_errors": [
+    {
+      "error_id": "cluster_randomization_violated",
+      "severity": "critical",
+      "location": "Clustering Considerations section / Experiment Design (per-impression randomization)",
+      "keywords_required": [
+        "clustering",
+        "clustered standard errors",
+        "independence",
+        "multiple impressions",
+        "same user",
+        "unit of randomization",
+        "unit of analysis",
+        "pseudo-replication",
+        "inflated sample size"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["cluster", "independence"],
+      "canonical_explanation": "The experiment randomized at the impression level but each user contributes ~50 impressions on average. Treating each impression as an independent observation violates the independence assumption of the t-test/z-test. Impressions from the same user are correlated (a user who is likely to click in the morning is also likely to click in the afternoon). This inflates the effective sample size from ~1.8M unique users to 45M impressions, dramatically understating the standard error and making results appear far more significant than they are. The correct analysis unit is the user, not the impression, or cluster-robust standard errors must be computed.",
+      "valid_corrections": [
+        "Randomize at the user level and analyze at the user level",
+        "Aggregate impressions to user-level means and analyze those",
+        "Use cluster-robust standard errors (clustering on user_id)",
+        "Use a mixed-effects model with user as a random effect"
+      ]
+    },
+    {
+      "error_id": "novelty_effect_confound",
+      "severity": "major",
+      "location": "Performance Over Time table (Week 1: +33% lift, Week 4: -4% lift)",
+      "keywords_required": [
+        "novelty effect",
+        "novelty",
+        "week 1",
+        "declining",
+        "time trend",
+        "non-stationary",
+        "primacy effect",
+        "learning effect",
+        "week 4"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["novelty", "effect"],
+      "canonical_explanation": "The weekly breakdown reveals a clear novelty effect pattern: the CTR lift was +33% in Week 1, then collapsed to +14%, +4%, and finally -4% by Week 4. The overall +12.4% is dominated by the early-period spike that does not represent sustainable performance. The Week 4 result (the only one uncontaminated by novelty) shows the treatment is actually harmful (-4%, p=0.08). Aggregating all 4 weeks into a single number masks this time trend and dramatically overstates the long-term effect.",
+      "valid_corrections": [
+        "Report week-by-week effects and use the steady-state period (Weeks 3-4) as primary evidence",
+        "Run a longer experiment (60-90 days) to ensure novelty effects wash out before concluding",
+        "Use a holdback group that was never exposed to the new algorithm to measure long-run effects",
+        "Flag the declining trend as a critical concern in the recommendation"
+      ]
+    },
+    {
+      "error_id": "primary_metric_switching",
+      "severity": "major",
+      "location": "Executive Summary / Pre-registered section (pre-registered: conversion rate, reported: CTR)",
+      "keywords_required": [
+        "pre-registered",
+        "primary metric",
+        "switching",
+        "conversion rate",
+        "ctr",
+        "post-hoc",
+        "HARKing",
+        "hypothesis",
+        "registered"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["pre-registered", "primary metric"],
+      "canonical_explanation": "The report explicitly states that conversion rate was pre-registered as the primary metric on Jan 28, before the experiment started. However, the Executive Summary and Recommendation are based on CTR improvement (+12.4%), not conversion rate (+7.8%). Switching the primary metric after observing results — even if the new metric also shows improvement — is a form of HARKing (Hypothesizing After Results are Known) that inflates false positive risk. The pre-registered metric (conversion rate) should be the primary basis for decision-making, and the analysis should explain why CTR was chosen instead.",
+      "valid_corrections": [
+        "Report conversion rate (the pre-registered primary metric) as the primary result",
+        "CTR can be reported as a secondary/exploratory metric",
+        "If changing the primary metric is justified, document the reason and apply appropriate corrections",
+        "Pre-register both metrics if both are important before the experiment starts"
+      ]
+    },
+    {
+      "error_id": "network_effects_ignored",
+      "severity": "major",
+      "location": "Experiment Design / Clustering Considerations (users may influence each other)",
+      "keywords_required": [
+        "network effects",
+        "interference",
+        "SUTVA",
+        "spillover",
+        "stable unit treatment value",
+        "social network",
+        "users interact",
+        "contamination"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["network", "interference"],
+      "canonical_explanation": "In an ad platform, users are not isolated units. A user in the control group who sees an ad may influence another user's purchase decision through word-of-mouth or social sharing — a SUTVA (Stable Unit Treatment Value Assumption) violation. Additionally, the bidding algorithm affects which ads compete in auctions, meaning control and treatment bids interact in the same auction. These network effects and interference can cause the measured treatment effect to differ from the true individual-level effect. The report does not mention or address these concerns.",
+      "valid_corrections": [
+        "Use geo-based randomization or network cluster randomization to minimize interference",
+        "Analyze whether users in treatment and control groups have social connections",
+        "Report the assumption of no interference explicitly and assess its plausibility",
+        "Consider switchback experiments (time-based randomization) for auction-level interference"
+      ]
+    },
+    {
+      "error_id": "regression_to_mean",
+      "severity": "minor",
+      "location": "Performance Over Time (Week 1 high performers regressed in subsequent weeks)",
+      "keywords_required": [
+        "regression to the mean",
+        "regression toward mean",
+        "mean reversion",
+        "extreme values",
+        "week 1 selection",
+        "high performers",
+        "natural variation"
+      ],
+      "keywords_threshold": 2,
+      "must_mention_concepts": ["regression", "mean"],
+      "canonical_explanation": "The Thompson Sampling algorithm by design explores more in early periods and then exploits. Ad slots/users that happened to have high CTR in Week 1 were selected more frequently by the algorithm in subsequent weeks. Some of the Week 1 'high performers' were simply lucky draws from natural variance, and their apparent performance in Week 2-4 regressed toward their true mean. This regression to the mean contributes to the observed Week 1 spike and subsequent decline, confounding the novelty effect interpretation.",
+      "valid_corrections": [
+        "Compare algorithm performance against a fixed holdout that never adapts",
+        "Use cross-validation or out-of-sample periods to evaluate true predictive performance",
+        "Separate exploration (Week 1) from exploitation (Weeks 2-4) in analysis"
+      ]
+    }
+  ]
+}
