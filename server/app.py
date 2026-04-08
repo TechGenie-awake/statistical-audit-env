@@ -236,7 +236,11 @@ async def health():
     return {"status": "ok", "tasks_loaded": len(env.tasks)}
 
 
-if __name__ == "__main__":
+def main():
     import uvicorn
+    port = int(os.getenv("PORT", 7860))
+    uvicorn.run("server.app:app", host="0.0.0.0", port=port, reload=False)
 
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+
+if __name__ == "__main__":
+    main()
