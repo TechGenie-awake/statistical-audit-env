@@ -1,3 +1,17 @@
+---
+title: StatAudit
+emoji: 📊
+colorFrom: blue
+colorTo: purple
+sdk: docker
+tags:
+  - openenv
+  - statistics
+  - reinforcement-learning
+  - auditing
+pinned: false
+---
+
 # StatAudit: AI-Powered Statistical Analysis Auditor
 
 > An [OpenEnv](https://github.com/openenv) environment for training AI agents to identify methodological errors in statistical reports.

@@ -1,29 +1,42 @@
 """
 StatAudit — Baseline Inference Script
+======================================
+MANDATORY environment variables:
+    API_BASE_URL   The API endpoint for the LLM (e.g. https://router.huggingface.co/v1)
+    MODEL_NAME     The model identifier (e.g. Qwen/Qwen2.5-72B-Instruct)
+    HF_TOKEN       Your Hugging Face / API key
 
-Runs all three baseline agents against all 9 tasks and prints a score table.
-Reads OPENAI_API_KEY from the environment.
+Optional:
+    STATAUDIT_BASE_URL   StatAudit environment server URL (default: http://localhost:8000)
 
-Usage:
-  python inference.py                          # runs all baselines
-  python inference.py --agent keyword          # keyword scanner only
-  python inference.py --agent zero_shot        # GPT-3.5 zero-shot only
-  python inference.py --agent few_shot         # GPT-4 few-shot CoT only
-  python inference.py --url http://host:8000   # against a remote server
+STDOUT FORMAT (strictly followed):
+    [START] task=<task_id> env=stataudit model=<model_name>
+    [STEP]  step=<n> action=<action_type> reward=<0.00> done=<true|false> error=<msg|null>
+    [END]   success=<true|false> steps=<n> score=<0.00> rewards=<r1,r2,...>
 """
 
-from __future__ import annotations
-
-import argparse
 import json
 import os
 import sys
-import time
+import textwrap
 from typing import Any, Dict, List, Optional
 
 import httpx
+from openai import OpenAI
 
-BASE_URL_DEFAULT = "http://localhost:8000"
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY", "")
+STATAUDIT_BASE_URL = os.getenv("STATAUDIT_BASE_URL", "http://localhost:8000")
+
+MAX_STEPS = 3          # clarification + submit (well within 20 min limit)
+SUCCESS_THRESHOLD = 0.3
+
+BENCHMARK = "stataudit"
 
 TASK_ORDER = [
     "ab_testing_easy",
@@ -37,171 +50,223 @@ TASK_ORDER = [
     "causal_inference_very_hard",
 ]
 
-DIFFICULTY_EMOJI = {
-    "easy": "🟢",
-    "medium": "🟡",
-    "hard": "🔴",
-    "very_hard": "🟣",
-}
+# ---------------------------------------------------------------------------
+# Logging helpers (strict format)
+# ---------------------------------------------------------------------------
+
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
-def reset_episode(client: httpx.Client, task_id: str) -> Dict[str, Any]:
-    resp = client.post("/reset", json={"task_id": task_id})
-    resp.raise_for_status()
-    return resp.json()
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val = "true" if done else "false"
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} "
+        f"done={done_val} error={error_val}",
+        flush=True,
+    )
 
 
-def submit_findings(client: httpx.Client, findings: List[Dict[str, Any]]) -> Dict[str, Any]:
-    action = {"action_type": "submit_audit", "findings": findings}
-    resp = client.post("/step", json=action)
-    resp.raise_for_status()
-    return resp.json()
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    success_val = "true" if success else "false"
+    print(
+        f"[END] success={success_val} steps={steps} score={score:.2f} rewards={rewards_str}",
+        flush=True,
+    )
 
 
-def get_grader_score(client: httpx.Client) -> Dict[str, Any]:
-    resp = client.post("/grader")
-    resp.raise_for_status()
-    return resp.json()
+# ---------------------------------------------------------------------------
+# LLM audit agent
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROMPT = textwrap.dedent("""
+    You are an expert statistician auditing a statistical analysis report.
+    Identify all methodological errors: multiple testing, selection bias,
+    omitted variable bias, heteroskedasticity, endogeneity, reverse causality,
+    Simpson's paradox, survivorship bias, spurious regression, parallel trends
+    violations, IV exclusion restriction violations, SUTVA/spillover, and any
+    other statistical flaws.
+
+    For each error return a JSON object with these exact keys:
+    - error_id: snake_case identifier (e.g. "multiple_testing_violation")
+    - severity: one of "critical", "major", "minor"
+    - location: section or table name in the report
+    - description: what is wrong (be specific)
+    - impact: business/scientific consequences
+    - correction: how to fix it
+    - confidence: float 0.0-1.0
+
+    Return ONLY a valid JSON array of findings. No prose, no markdown.
+""").strip()
 
 
-def run_keyword_baseline(client: httpx.Client, task_ids: List[str]) -> Dict[str, float]:
-    """Run keyword baseline via the server's /baseline endpoint."""
-    resp = client.get("/baseline", params={"agents": "keyword"}, timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
-    scores = data["baselines"].get("keyword_scanner", {}).get("scores_by_task", {})
-    return {tid: scores.get(tid, 0.0) for tid in task_ids}
+def call_llm(report_text: str, client: OpenAI) -> List[Dict[str, Any]]:
+    """Call LLM and return parsed findings list."""
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Audit this report:\n\n{report_text}"},
+            ],
+            temperature=0.2,
+            max_tokens=2000,
+        )
+        content = response.choices[0].message.content or "[]"
+
+        # Extract JSON array robustly
+        start = content.find("[")
+        end = content.rfind("]") + 1
+        if start == -1 or end == 0:
+            return []
+        raw = json.loads(content[start:end])
+
+        # Validate and normalise each finding
+        findings = []
+        for item in raw:
+            severity = item.get("severity", "minor")
+            if severity not in ("critical", "major", "minor"):
+                severity = "minor"
+            confidence = float(item.get("confidence", 0.7))
+            confidence = max(0.0, min(1.0, confidence))
+            findings.append({
+                "error_id": str(item.get("error_id", "unknown_error")).strip(),
+                "severity": severity,
+                "location": str(item.get("location", "Unknown")),
+                "description": str(item.get("description", "")),
+                "impact": str(item.get("impact", "")),
+                "correction": str(item.get("correction", "")),
+                "confidence": confidence,
+            })
+        return findings
+
+    except Exception as exc:
+        return []
 
 
-def run_llm_baseline_local(
-    client: httpx.Client,
-    task_ids: List[str],
-    agent_type: str,
-    api_key: str,
-) -> Dict[str, float]:
-    """Run an LLM baseline locally (without going through the server endpoint)."""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from server.baselines.zero_shot_llm import ZeroShotLLM
-    from server.baselines.few_shot_cot import FewShotCoT
+# ---------------------------------------------------------------------------
+# Environment interaction helpers
+# ---------------------------------------------------------------------------
 
-    if agent_type == "zero_shot":
-        agent = ZeroShotLLM(api_key=api_key, model="gpt-3.5-turbo")
-    else:
-        agent = FewShotCoT(api_key=api_key, model="gpt-4o-mini")
-
-    scores: Dict[str, float] = {}
-    for task_id in task_ids:
-        obs = reset_episode(client, task_id)
-        report_text = obs["report_text"]
-        metadata = obs.get("report_metadata", {})
-
-        print(f"    Auditing {task_id}...", end=" ", flush=True)
-        findings = agent.audit_report(report_text, metadata)
-        result = submit_findings(client, [f.model_dump() for f in findings])
-        reward = result.get("reward", 0.0)
-        scores[task_id] = round(reward, 4)
-        print(f"score={reward:.3f}")
-        time.sleep(0.5)  # Rate limit courtesy
-
-    return scores
+def env_reset(http: httpx.Client, task_id: str) -> Dict[str, Any]:
+    return http.post("/reset", json={"task_id": task_id}, timeout=30).json()
 
 
-def print_results_table(results: Dict[str, Dict[str, float]], task_meta: Dict[str, Any]) -> None:
-    tasks_info = {t["task_id"]: t for t in task_meta.get("tasks", [])}
+def env_step(http: httpx.Client, action: Dict[str, Any]) -> Dict[str, Any]:
+    return http.post("/step", json=action, timeout=60).json()
 
-    # Header
-    agent_names = list(results.keys())
-    col_w = 14
-    header = f"{'Task':<35} {'Diff':<10}" + "".join(f"{n:>{col_w}}" for n in agent_names)
-    print("\n" + "=" * len(header))
-    print(header)
-    print("=" * len(header))
 
-    totals = {name: 0.0 for name in agent_names}
-    count = 0
+# ---------------------------------------------------------------------------
+# Single episode runner
+# ---------------------------------------------------------------------------
 
-    for task_id in TASK_ORDER:
-        if task_id not in tasks_info:
-            continue
-        info = tasks_info[task_id]
-        diff = info.get("difficulty", "")
-        emoji = DIFFICULTY_EMOJI.get(diff, "")
-        row = f"{task_id:<35} {emoji+' '+diff:<10}"
-        for name in agent_names:
-            score = results[name].get(task_id, 0.0)
-            totals[name] += score
-            row += f"{score:>{col_w}.3f}"
-        print(row)
-        count += 1
+def run_episode(task_id: str, http: httpx.Client, llm: OpenAI) -> Dict[str, Any]:
+    """Run one full episode for a task. Returns episode summary."""
+    rewards: List[float] = []
+    step = 0
+    score = 0.0
+    success = False
+    last_error: Optional[str] = None
 
-    print("-" * len(header))
-    avg_row = f"{'AVERAGE':<35} {'':10}"
-    for name in agent_names:
-        avg = totals[name] / count if count else 0.0
-        avg_row += f"{avg:>{col_w}.3f}"
-    print(avg_row)
-    print("=" * len(header))
+    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
+    try:
+        # --- Step 0: reset ---
+        obs = env_reset(http, task_id)
+        report_text = obs.get("report_text", "")
+
+        # --- Step 1: optional clarification for extra context ---
+        step += 1
+        clarify_action = {
+            "action_type": "request_clarification",
+            "clarification_request": "Please provide the raw data summary and statistical test details.",
+        }
+        try:
+            clarify_obs = env_step(http, clarify_action)
+            reward_step1 = float(clarify_obs.get("reward", 0.0))
+            done_step1 = bool(clarify_obs.get("done", False))
+            rewards.append(reward_step1)
+            log_step(step, "request_clarification", reward_step1, done_step1, None)
+
+            # Append any extra context to report
+            extra = []
+            if clarify_obs.get("raw_data_summary"):
+                extra.append(f"DATA: {clarify_obs['raw_data_summary']}")
+            if clarify_obs.get("statistical_test_details"):
+                extra.append(f"TESTS: {clarify_obs['statistical_test_details']}")
+            if extra:
+                report_text += "\n\n" + "\n".join(extra)
+        except Exception as exc:
+            last_error = str(exc)
+            log_step(step, "request_clarification", 0.0, False, last_error)
+
+        # --- Step 2: LLM audit ---
+        findings = call_llm(report_text, llm)
+
+        step += 1
+        submit_action = {
+            "action_type": "submit_audit",
+            "findings": findings,
+        }
+        try:
+            result_obs = env_step(http, submit_action)
+            reward_step2 = float(result_obs.get("reward", 0.0))
+            done_step2 = bool(result_obs.get("done", True))
+            rewards.append(reward_step2)
+            score = reward_step2
+            success = score >= SUCCESS_THRESHOLD
+            log_step(step, "submit_audit", reward_step2, done_step2, None)
+        except Exception as exc:
+            last_error = str(exc)
+            log_step(step, "submit_audit", 0.0, True, last_error)
+
+    except Exception as exc:
+        last_error = str(exc)
+        log_step(step or 1, "error", 0.0, True, last_error)
+
+    log_end(success=success, steps=step, score=score, rewards=rewards)
+    return {"task_id": task_id, "score": score, "steps": step, "success": success}
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="StatAudit baseline inference script")
-    parser.add_argument("--url", default=BASE_URL_DEFAULT, help="Server base URL")
-    parser.add_argument(
-        "--agent",
-        choices=["keyword", "zero_shot", "few_shot", "all"],
-        default="all",
-        help="Which baseline agent to run",
-    )
-    parser.add_argument("--output", help="Save results to JSON file")
-    args = parser.parse_args()
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    if args.agent in ("zero_shot", "few_shot", "all") and not api_key:
-        print("Warning: OPENAI_API_KEY not set. LLM baselines will be skipped.")
-
-    client = httpx.Client(base_url=args.url, timeout=300)
-
-    # Verify server is healthy
-    try:
-        health = client.get("/health").json()
-        print(f"Server healthy. Tasks loaded: {health['tasks_loaded']}")
-    except Exception as e:
-        print(f"ERROR: Cannot connect to server at {args.url}: {e}")
+    if not API_KEY:
+        print("ERROR: HF_TOKEN or API_KEY environment variable is not set.", file=sys.stderr)
         sys.exit(1)
 
-    # Get task list
-    tasks_resp = client.get("/tasks").json()
-    task_ids = [t["task_id"] for t in tasks_resp["tasks"]]
+    llm = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
+    http = httpx.Client(base_url=STATAUDIT_BASE_URL, timeout=120)
 
-    results: Dict[str, Dict[str, float]] = {}
-    agents_to_run = [args.agent] if args.agent != "all" else ["keyword", "zero_shot", "few_shot"]
+    # Verify server health
+    try:
+        health = http.get("/health", timeout=15).json()
+    except Exception as exc:
+        print(f"ERROR: Cannot reach StatAudit server at {STATAUDIT_BASE_URL}: {exc}", file=sys.stderr)
+        sys.exit(1)
 
-    for agent_type in agents_to_run:
-        print(f"\nRunning baseline: {agent_type}")
-        print("-" * 40)
+    # Get available tasks
+    try:
+        tasks_resp = http.get("/tasks", timeout=15).json()
+        available = {t["task_id"] for t in tasks_resp.get("tasks", [])}
+    except Exception:
+        available = set(TASK_ORDER)
 
-        if agent_type == "keyword":
-            scores = run_keyword_baseline(client, task_ids)
-            results["keyword_scanner"] = scores
-        elif agent_type == "zero_shot" and api_key:
-            scores = run_llm_baseline_local(client, task_ids, "zero_shot", api_key)
-            results["zero_shot_gpt35"] = scores
-        elif agent_type == "few_shot" and api_key:
-            scores = run_llm_baseline_local(client, task_ids, "few_shot", api_key)
-            results["few_shot_gpt4"] = scores
-        else:
-            print(f"  Skipped (no API key).")
+    results = []
+    for task_id in TASK_ORDER:
+        if task_id not in available:
+            continue
+        summary = run_episode(task_id, http, llm)
+        results.append(summary)
 
-    if not results:
-        print("\nNo results to display.")
-        sys.exit(0)
-
-    print_results_table(results, tasks_resp)
-
-    if args.output:
-        with open(args.output, "w") as f:
-            json.dump(results, f, indent=2)
-        print(f"\nResults saved to {args.output}")
+    # Final summary to stderr (doesn't pollute [START]/[STEP]/[END] stdout)
+    total = len(results)
+    avg = sum(r["score"] for r in results) / total if total else 0.0
+    print(f"\n# Summary: {total} tasks, average score={avg:.3f}", file=sys.stderr)
 
 
 if __name__ == "__main__":
