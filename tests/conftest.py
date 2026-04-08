@@ -16,7 +16,7 @@ from models import Finding, StatAuditAction
 @pytest.fixture(scope="session")
 def client():
     """FastAPI test client (session-scoped — one server instance per test run)."""
-    return TestClient(app)
+    return TestClient(app, raise_server_exceptions=False)
 
 
 @pytest.fixture()

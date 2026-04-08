@@ -1,4 +1,12 @@
-"""Tests for the FastAPI HTTP endpoints."""
+"""Tests for the FastAPI HTTP endpoints.
+
+Note: The openenv-core HTTP /reset and /step endpoints are stateless (each
+creates a new env instance), so multi-step interactions are tested via the
+environment directly in test_environment.py.  These tests cover:
+  - /health (openenv-core)
+  - /reset response format (openenv-core, single-call)
+  - /tasks, /baseline, /grader (custom endpoints)
+"""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -43,8 +51,7 @@ class TestHealth:
         resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "ok"
-        assert data["tasks_loaded"] == 9
+        assert data["status"] == "healthy"
 
 
 class TestTasks:
@@ -85,150 +92,27 @@ class TestReset:
         resp = client.post("/reset", json={"task_id": "ab_testing_easy"})
         assert resp.status_code == 200
         data = resp.json()
-        assert "report_text" in data
-        assert data["step_count"] == 0
+        assert "observation" in data
+        obs = data["observation"]
+        assert "report_text" in obs
+        assert obs["step_count"] == 0
         assert data["done"] is False
-        assert data["reward"] == 0.0
 
     def test_reset_without_task_id(self, client):
         resp = client.post("/reset", json={})
         assert resp.status_code == 200
-        assert "report_text" in resp.json()
+        data = resp.json()
+        assert "observation" in data
+        assert "report_text" in data["observation"]
 
-    def test_reset_with_invalid_task_returns_400(self, client):
+    def test_reset_with_invalid_task_returns_error(self, client):
         resp = client.post("/reset", json={"task_id": "invalid_task_xyz"})
-        assert resp.status_code == 400
-        assert "Unknown task_id" in resp.json()["detail"]
+        assert resp.status_code == 500
 
     def test_reset_report_text_not_empty(self, client):
         resp = client.post("/reset", json={"task_id": "regression_easy"})
-        assert len(resp.json()["report_text"]) > 100
-
-
-class TestState:
-    def test_state_before_reset_returns_400(self, client):
-        # We can't guarantee no prior state in session-scoped env, so just check it works
-        resp = client.get("/state")
-        # Either 200 (if prior episode) or 400 (no episode)
-        assert resp.status_code in (200, 400)
-
-    def test_state_after_reset_returns_200(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        resp = client.get("/state")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["task_id"] == "ab_testing_easy"
-        assert "episode_id" in data
-        assert "total_errors_in_report" in data
-
-
-class TestStep:
-    def test_step_submit_audit_returns_reward(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        resp = client.post("/step", json={
-            "action_type": "submit_audit",
-            "findings": EASY_FINDINGS,
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["done"] is True
-        assert data["reward"] > 0.5
-
-    def test_step_request_clarification_unlocks_data(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        resp = client.post("/step", json={
-            "action_type": "request_clarification",
-            "clarification_request": "please show raw data",
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["done"] is False
-        assert data["raw_data_summary"] is not None
-        assert data["hints_used"] == 1
-
-    def test_step_request_test_details(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        resp = client.post("/step", json={
-            "action_type": "request_clarification",
-            "clarification_request": "what statistical test was used?",
-        })
-        data = resp.json()
-        assert data["statistical_test_details"] is not None
-
-    def test_step_mark_complete_ends_episode(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        resp = client.post("/step", json={"action_type": "mark_complete"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["done"] is True
-        assert data["reward"] == 0.0
-
-    def test_step_after_done_returns_400(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        client.post("/step", json={"action_type": "mark_complete"})
-        resp = client.post("/step", json={"action_type": "mark_complete"})
-        assert resp.status_code == 400
-        assert "done" in resp.json()["detail"].lower()
-
-    def test_step_empty_findings_gives_low_reward(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        resp = client.post("/step", json={
-            "action_type": "submit_audit",
-            "findings": [],
-        })
-        data = resp.json()
-        assert data["reward"] < 0.1
-
-    def test_step_invalid_severity_returns_422(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        resp = client.post("/step", json={
-            "action_type": "submit_audit",
-            "findings": [{
-                "error_id": "x", "severity": "extreme",
-                "location": "s", "description": "d",
-                "impact": "i", "correction": "c", "confidence": 0.5,
-            }],
-        })
-        assert resp.status_code == 422
-
-    def test_step_feedback_contains_score(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        resp = client.post("/step", json={
-            "action_type": "submit_audit",
-            "findings": EASY_FINDINGS,
-        })
-        data = resp.json()
-        assert data["finding_feedback"] is not None
-        assert "Score" in data["finding_feedback"]
-
-
-class TestGrader:
-    def test_grader_returns_correct_score_after_submission(self, client):
-        client.post("/reset", json={"task_id": "ab_testing_easy"})
-        step_resp = client.post("/step", json={
-            "action_type": "submit_audit",
-            "findings": EASY_FINDINGS,
-        })
-        reward_from_step = step_resp.json()["reward"]
-
-        grader_resp = client.post("/grader")
-        assert grader_resp.status_code == 200
-        data = grader_resp.json()
-        assert data["task_id"] == "ab_testing_easy"
-        assert data["errors_found"] == 2
-        assert data["total_errors"] == 2
-        assert data["false_positives"] == 0
-        # score should match the reward from step
-        assert data["score"] == pytest.approx(reward_from_step, abs=0.001)
-
-    def test_grader_before_episode_returns_400(self, client):
-        # Create fresh client to guarantee no prior state
-        from server.app import app
-        fresh_client = TestClient(app)
-        # Reset to a known state first — we can't guarantee clean state
-        # so just verify response is valid
-        resp = fresh_client.post("/grader")
-        assert resp.status_code in (200, 400)
+        obs = resp.json()["observation"]
+        assert len(obs["report_text"]) > 100
 
 
 class TestBaseline:

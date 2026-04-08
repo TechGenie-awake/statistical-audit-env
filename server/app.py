@@ -1,10 +1,8 @@
 """
 StatAudit FastAPI Server
 
-Implements the OpenEnv standard HTTP interface plus required extra endpoints:
-  POST /reset       — start new episode
-  POST /step        — execute action
-  GET  /state       — current episode state
+Uses openenv-core's create_fastapi_app for standard endpoints (/reset, /step,
+/state, /ws, /health, /schema, /metadata) and adds custom endpoints on top:
   GET  /tasks       — list all tasks and action schema
   GET  /baseline    — run baseline agents on all tasks
   POST /grader      — return grader score for current episode
@@ -14,31 +12,41 @@ from __future__ import annotations
 
 import os
 import sys
-import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Make sure the repo root is importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models import StatAuditAction, StatAuditObservation, StatAuditState
+from openenv.core import create_fastapi_app
+
+from models import StatAuditAction, StatAuditObservation
 from server.environment import StatAuditEnvironment
 from server.baselines.keyword_baseline import KeywordBaseline
 from server.baselines.zero_shot_llm import ZeroShotLLM
 from server.baselines.few_shot_cot import FewShotCoT
 
-app = FastAPI(
-    title="StatAudit — Statistical Analysis Auditing Environment",
-    description=(
-        "An OpenEnv environment for training AI agents to identify methodological "
-        "errors in statistical reports. Supports A/B testing, regression, and "
-        "causal inference domains across 9 tasks (easy → very hard)."
-    ),
-    version="1.0.0",
+
+# ---------------------------------------------------------------------------
+# Create the app via openenv-core (provides /ws, /reset, /step, /state, etc.)
+# ---------------------------------------------------------------------------
+
+app = create_fastapi_app(
+    env=StatAuditEnvironment,
+    action_cls=StatAuditAction,
+    observation_cls=StatAuditObservation,
 )
+
+app.title = "StatAudit — Statistical Analysis Auditing Environment"
+app.description = (
+    "An OpenEnv environment for training AI agents to identify methodological "
+    "errors in statistical reports. Supports A/B testing, regression, and "
+    "causal inference domains across 9 tasks (easy → very hard)."
+)
+app.version = "1.0.0"
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,17 +55,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Single global environment instance (stateful, per OpenEnv spec)
-env = StatAuditEnvironment()
+
+# ---------------------------------------------------------------------------
+# Helper: standalone environment instance for custom endpoints
+# (The openenv-core app manages its own env instances per WebSocket session,
+#  but our custom endpoints need a shared instance for task listing / baselines.)
+# ---------------------------------------------------------------------------
+
+_shared_env = StatAuditEnvironment()
 
 
 # ---------------------------------------------------------------------------
 # Request / response helpers
 # ---------------------------------------------------------------------------
-
-class ResetRequest(BaseModel):
-    task_id: Optional[str] = None
-
 
 class GraderResponse(BaseModel):
     episode_id: Optional[str]
@@ -69,50 +79,7 @@ class GraderResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Standard OpenEnv endpoints
-# ---------------------------------------------------------------------------
-
-@app.post("/reset", response_model=Dict[str, Any])
-async def reset(body: ResetRequest = ResetRequest()):
-    """
-    Start a new episode.
-
-    Pass `task_id` to select a specific task, or omit for a random task.
-    Returns the initial observation containing the report to audit.
-    """
-    try:
-        obs = env.reset(task_id=body.task_id)
-        return obs.model_dump()
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@app.post("/step", response_model=Dict[str, Any])
-async def step(action: StatAuditAction):
-    """
-    Execute one step in the current episode.
-
-    - **submit_audit**: submit your findings for grading
-    - **request_clarification**: request raw data or test details
-    - **mark_complete**: end episode without submitting findings
-    """
-    try:
-        obs = env.step(action)
-        return obs.model_dump()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@app.get("/state", response_model=Dict[str, Any])
-async def get_state():
-    """Return the current episode state (metadata, progress, scores)."""
-    if env.state is None:
-        raise HTTPException(status_code=400, detail="No active episode. Call /reset first.")
-    return env.state.model_dump()
-
-
-# ---------------------------------------------------------------------------
-# Required extra endpoints
+# Custom endpoints
 # ---------------------------------------------------------------------------
 
 @app.get("/tasks", response_model=Dict[str, Any])
@@ -134,7 +101,7 @@ async def list_tasks():
             ),
         }
         for task in sorted(
-            env.tasks.values(),
+            _shared_env.tasks.values(),
             key=lambda t: (t["domain"], ["easy", "medium", "hard", "very_hard"].index(t["difficulty"])),
         )
     ]
@@ -172,7 +139,6 @@ async def run_baseline(
         if "few_shot" in requested:
             baselines["few_shot_gpt4"] = FewShotCoT(api_key=api_key, model="gpt-4o-mini")
     else:
-        # Degrade gracefully when no API key
         if "zero_shot" in requested or "few_shot" in requested:
             pass  # Skip LLM baselines silently
 
@@ -181,11 +147,11 @@ async def run_baseline(
     for baseline_name, baseline in baselines.items():
         scores_by_task: Dict[str, float] = {}
 
-        for task_id, task in env.tasks.items():
-            obs = env.reset(task_id=task_id)
+        for task_id, task in _shared_env.tasks.items():
+            obs = _shared_env.reset(task_id=task_id)
             findings = baseline.audit_report(obs.report_text, obs.report_metadata)
             action = StatAuditAction(action_type="submit_audit", findings=findings)
-            result_obs = env.step(action)
+            result_obs = _shared_env.step(action)
             scores_by_task[task_id] = round(result_obs.reward, 4)
 
         avg = round(sum(scores_by_task.values()) / len(scores_by_task), 4) if scores_by_task else 0.0
@@ -196,7 +162,7 @@ async def run_baseline(
 
     return {
         "baselines": results,
-        "tasks_evaluated": len(env.tasks),
+        "tasks_evaluated": len(_shared_env.tasks),
         "note": (
             "LLM baselines skipped — set OPENAI_API_KEY to run zero_shot and few_shot."
             if not api_key and len(baselines) < len(requested)
@@ -210,10 +176,10 @@ async def get_grader_score():
     """
     Return the grader score for the current (or most recently completed) episode.
     """
-    if env.state is None:
+    state = _shared_env.state
+    if not state.episode_id:
         raise HTTPException(status_code=400, detail="No active episode. Call /reset first.")
 
-    state = env.state
     total = state.total_errors_in_report
     score = round(state.cumulative_reward, 4)
 
@@ -228,13 +194,8 @@ async def get_grader_score():
 
 
 # ---------------------------------------------------------------------------
-# Health check
+# Entry point
 # ---------------------------------------------------------------------------
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "tasks_loaded": len(env.tasks)}
-
 
 def main():
     import uvicorn
