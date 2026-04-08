@@ -1,0 +1,81 @@
+name: statistical-audit-env
+version: "1.0.0"
+description: >
+  StatAudit is an OpenEnv environment for training AI agents to identify
+  methodological errors in statistical analysis reports. Agents audit A/B tests,
+  regression analyses, and causal inference studies — a critical real-world task
+  that prevents costly business decisions based on flawed statistics.
+author: StatAudit Team
+tags:
+  - openenv
+  - statistics
+  - auditing
+  - real-world
+  - nlp
+  - reinforcement-learning
+
+environment:
+  type: http
+  base_url: http://localhost:8000
+  endpoints:
+    reset: POST /reset
+    step: POST /step
+    state: GET /state
+    tasks: GET /tasks
+    baseline: GET /baseline
+    grader: POST /grader
+
+action_space:
+  type: structured
+  schema: StatAuditAction
+
+observation_space:
+  type: structured
+  schema: StatAuditObservation
+
+tasks:
+  - id: ab_testing_easy
+    difficulty: easy
+    domain: ab_testing
+    description: E-commerce checkout A/B test with 2 planted errors
+  - id: ab_testing_medium
+    difficulty: medium
+    domain: ab_testing
+    description: Social media feature rollout with 3 planted errors
+  - id: ab_testing_hard
+    difficulty: hard
+    domain: ab_testing
+    description: Ad platform bidding algorithm with 5 planted errors
+  - id: regression_easy
+    difficulty: easy
+    domain: regression
+    description: House price prediction with 2 planted errors
+  - id: regression_medium
+    difficulty: medium
+    domain: regression
+    description: Customer churn analysis with 3 planted errors
+  - id: regression_hard
+    difficulty: hard
+    domain: regression
+    description: Economic forecasting model with 5 planted errors
+  - id: causal_inference_medium
+    difficulty: medium
+    domain: causal_inference
+    description: Marketing campaign ROI with 3 planted errors
+  - id: causal_inference_hard
+    difficulty: hard
+    domain: causal_inference
+    description: Policy intervention study with 4 planted errors
+  - id: causal_inference_very_hard
+    difficulty: very_hard
+    domain: causal_inference
+    description: Multi-armed bandit optimization with 6 planted errors
+
+reward:
+  type: continuous
+  range: [0.0, 1.0]
+  description: >
+    Multi-dimensional reward: error detection (40%), severity accuracy (20%),
+    explanation quality (20%), correction validity (15%), efficiency (5%).
+
+max_steps_per_episode: 10
