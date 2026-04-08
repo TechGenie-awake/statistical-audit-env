@@ -18,7 +18,8 @@ RUN pip install --no-cache-dir \
     scipy>=1.12.0 \
     openai>=1.20.0 \
     httpx>=0.27.0 \
-    python-multipart>=0.0.9
+    python-multipart>=0.0.9 \
+    "openenv-core>=0.2.0"
 
 # Pre-download the sentence-transformers model so it's baked into the image
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"

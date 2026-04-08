@@ -20,8 +20,11 @@ class TestEnvironmentInit:
         for tid in ALL_TASK_IDS:
             assert tid in env.tasks, f"Missing task: {tid}"
 
-    def test_initial_state_is_none(self, env):
-        assert env.state is None
+    def test_initial_state_is_empty(self, env):
+        # Before reset, state returns an empty default StatAuditState
+        state = env.state
+        assert state.episode_id == ""
+        assert state.task_id == ""
 
 
 class TestReset:

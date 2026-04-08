@@ -1,14 +1,15 @@
 """
-StatAudit OpenEnv - Data Models
+StatAudit OpenEnv — Data Models
 
-Pydantic models for Actions, Observations, and States.
+Pydantic models extending openenv-core base classes for Actions, Observations, and States.
 """
 
 from typing import List, Optional, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import Field
+from openenv.core import Action, Observation, State
 
 
-class Finding(BaseModel):
+class Finding(Action):
     """Individual error finding submitted by the agent."""
 
     error_id: str = Field(
@@ -36,7 +37,7 @@ class Finding(BaseModel):
     )
 
 
-class StatAuditAction(BaseModel):
+class StatAuditAction(Action):
     """Action submitted by the agent to the environment."""
 
     action_type: Literal["submit_audit", "request_clarification", "mark_complete"] = Field(
@@ -49,95 +50,70 @@ class StatAuditAction(BaseModel):
     )
     findings: Optional[List[Finding]] = Field(
         default=None,
-        description="List of findings for submit_audit action. Required when action_type='submit_audit'.",
+        description="List of findings for submit_audit action.",
     )
     clarification_request: Optional[str] = Field(
         default=None,
         description=(
-            "Free-text clarification request for request_clarification action. "
-            "Mention 'data' to receive raw data summary, 'test' to receive test details."
+            "Free-text clarification request. "
+            "Mention 'data' for raw data summary, 'test' for test details."
         ),
     )
 
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "action_type": "submit_audit",
-                    "findings": [
-                        {
-                            "error_id": "multiple_testing_violation",
-                            "severity": "critical",
-                            "location": "Results section",
-                            "description": "Five metrics were tested and only the best p-value reported without multiple comparison correction.",
-                            "impact": "Inflates the false positive rate from 5% to ~23%, making the result unreliable.",
-                            "correction": "Apply Bonferroni correction (α = 0.05 / 5 = 0.01) or pre-specify a single primary metric.",
-                            "confidence": 0.95,
-                        }
-                    ],
-                }
-            ]
-        }
-    }
 
-
-class StatAuditObservation(BaseModel):
+class StatAuditObservation(Observation):
     """What the agent observes at each step."""
 
     # Core content
     report_text: str = Field(
+        default="",
         description="The full statistical analysis report to audit"
     )
     report_metadata: Dict[str, Any] = Field(
-        description="Contextual metadata about the report (sample_size, test_type, domain, etc.)"
+        default_factory=dict,
+        description="Contextual metadata about the report"
     )
 
-    # Progressive assistance (unlocks on clarification request)
+    # Progressive assistance
     raw_data_summary: Optional[str] = Field(
         default=None,
-        description="Summary of raw underlying data (available on explicit request)"
+        description="Summary of raw underlying data (available on request)"
     )
     statistical_test_details: Optional[str] = Field(
         default=None,
-        description="Detailed test parameters and configuration (available on explicit request)"
+        description="Detailed test parameters (available on request)"
     )
 
-    # Feedback on previous findings
+    # Feedback
     previous_findings: List[Finding] = Field(
         default_factory=list,
-        description="Agent's findings submitted in previous steps of this episode"
+        description="Agent's findings submitted in previous steps"
     )
     finding_feedback: Optional[str] = Field(
         default=None,
-        description="Qualitative feedback on the agent's submitted findings"
+        description="Qualitative feedback on submitted findings"
     )
 
     # Step tracking
-    step_count: int = Field(default=0, description="Current step number in the episode")
-    max_steps: int = Field(default=10, description="Maximum steps allowed per episode")
-    hints_used: int = Field(default=0, description="Number of clarification hints requested")
+    step_count: int = Field(default=0, description="Current step number")
+    max_steps: int = Field(default=10, description="Maximum steps per episode")
+    hints_used: int = Field(default=0, description="Clarifications requested")
 
-    # Episode status
+    # Episode status (openenv standard fields)
     done: bool = Field(default=False, description="Whether the episode has ended")
-    reward: float = Field(default=0.0, description="Reward earned in this step")
+    reward: float = Field(default=0.0, description="Reward earned this step")
 
 
-class StatAuditState(BaseModel):
-    """Full episode metadata (internal state)."""
+class StatAuditState(State):
+    """Full episode metadata."""
 
-    episode_id: str = Field(description="Unique episode identifier (UUID)")
-    task_id: str = Field(description="Task identifier (e.g., 'ab_testing_easy')")
-    task_difficulty: Literal["easy", "medium", "hard", "very_hard"] = Field(
-        description="Difficulty level of the current task"
-    )
-    task_domain: Literal["ab_testing", "regression", "causal_inference"] = Field(
-        description="Domain of the current task"
-    )
-    current_step: int = Field(description="Current step number")
-    total_errors_in_report: int = Field(
-        description="Ground truth count of planted errors in the report"
-    )
-    errors_found: int = Field(description="Number of errors correctly identified so far")
-    false_positives: int = Field(description="Number of incorrect error claims")
-    cumulative_reward: float = Field(default=0.0, description="Accumulated reward this episode")
-    hints_used: int = Field(default=0, description="Number of hints/clarifications requested")
+    episode_id: str = Field(default="", description="Unique episode identifier")
+    task_id: str = Field(default="", description="Task identifier")
+    task_difficulty: str = Field(default="easy", description="Difficulty level")
+    task_domain: str = Field(default="ab_testing", description="Domain")
+    current_step: int = Field(default=0, description="Current step number")
+    total_errors_in_report: int = Field(default=0, description="Ground truth error count")
+    errors_found: int = Field(default=0, description="Errors correctly identified")
+    false_positives: int = Field(default=0, description="Incorrect error claims")
+    cumulative_reward: float = Field(default=0.0, description="Accumulated reward")
+    hints_used: int = Field(default=0, description="Hints requested")

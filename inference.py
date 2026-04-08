@@ -2,27 +2,26 @@
 StatAudit — Baseline Inference Script
 ======================================
 MANDATORY environment variables:
-    API_BASE_URL   The API endpoint for the LLM (e.g. https://router.huggingface.co/v1)
-    MODEL_NAME     The model identifier (e.g. Qwen/Qwen2.5-72B-Instruct)
-    HF_TOKEN       Your Hugging Face / API key
-
-Optional:
-    STATAUDIT_BASE_URL   StatAudit environment server URL (default: http://localhost:8000)
+    API_BASE_URL   The API endpoint for the LLM.
+    MODEL_NAME     The model identifier to use for inference.
+    HF_TOKEN       Your Hugging Face / API key.
+    LOCAL_IMAGE_NAME  The name of the local Docker image (optional, for from_docker_image())
 
 STDOUT FORMAT (strictly followed):
     [START] task=<task_id> env=stataudit model=<model_name>
-    [STEP]  step=<n> action=<action_type> reward=<0.00> done=<true|false> error=<msg|null>
+    [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
     [END]   success=<true|false> steps=<n> score=<0.00> rewards=<r1,r2,...>
 """
 
+import asyncio
 import json
 import os
 import sys
 import textwrap
 from typing import Any, Dict, List, Optional
 
-import httpx
 from openai import OpenAI
+from openenv.core import GenericEnvClient
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -30,13 +29,11 @@ from openai import OpenAI
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY", "")
-STATAUDIT_BASE_URL = os.getenv("STATAUDIT_BASE_URL", "http://localhost:8000")
-
-MAX_STEPS = 3          # clarification + submit (well within 20 min limit)
-SUCCESS_THRESHOLD = 0.3
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 BENCHMARK = "stataudit"
+SUCCESS_THRESHOLD = 0.1
 
 TASK_ORDER = [
     "ab_testing_easy",
@@ -50,8 +47,9 @@ TASK_ORDER = [
     "causal_inference_very_hard",
 ]
 
+
 # ---------------------------------------------------------------------------
-# Logging helpers (strict format)
+# Logging helpers (strict format — do not modify)
 # ---------------------------------------------------------------------------
 
 def log_start(task: str, env: str, model: str) -> None:
@@ -98,14 +96,14 @@ SYSTEM_PROMPT = textwrap.dedent("""
     - correction: how to fix it
     - confidence: float 0.0-1.0
 
-    Return ONLY a valid JSON array of findings. No prose, no markdown.
+    Return ONLY a valid JSON array of findings. No prose, no markdown fences.
 """).strip()
 
 
-def call_llm(report_text: str, client: OpenAI) -> List[Dict[str, Any]]:
+def call_llm(report_text: str, llm: OpenAI) -> List[Dict[str, Any]]:
     """Call LLM and return parsed findings list."""
     try:
-        response = client.chat.completions.create(
+        response = llm.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -116,14 +114,12 @@ def call_llm(report_text: str, client: OpenAI) -> List[Dict[str, Any]]:
         )
         content = response.choices[0].message.content or "[]"
 
-        # Extract JSON array robustly
         start = content.find("[")
         end = content.rfind("]") + 1
         if start == -1 or end == 0:
             return []
         raw = json.loads(content[start:end])
 
-        # Validate and normalise each finding
         findings = []
         for item in raw:
             severity = item.get("severity", "minor")
@@ -141,90 +137,117 @@ def call_llm(report_text: str, client: OpenAI) -> List[Dict[str, Any]]:
                 "confidence": confidence,
             })
         return findings
-
-    except Exception as exc:
+    except Exception:
         return []
 
 
 # ---------------------------------------------------------------------------
-# Environment interaction helpers
+# Single episode runner (async, uses openenv GenericEnvClient)
 # ---------------------------------------------------------------------------
 
-def env_reset(http: httpx.Client, task_id: str) -> Dict[str, Any]:
-    return http.post("/reset", json={"task_id": task_id}, timeout=30).json()
-
-
-def env_step(http: httpx.Client, action: Dict[str, Any]) -> Dict[str, Any]:
-    return http.post("/step", json=action, timeout=60).json()
-
-
-# ---------------------------------------------------------------------------
-# Single episode runner
-# ---------------------------------------------------------------------------
-
-def run_episode(task_id: str, http: httpx.Client, llm: OpenAI) -> Dict[str, Any]:
-    """Run one full episode for a task. Returns episode summary."""
+async def run_episode(
+    task_id: str,
+    client: GenericEnvClient,
+    llm: OpenAI,
+) -> Dict[str, Any]:
+    """Run one full episode for a task."""
     rewards: List[float] = []
     step = 0
     score = 0.0
     success = False
-    last_error: Optional[str] = None
 
     log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        # --- Step 0: reset ---
-        obs = env_reset(http, task_id)
-        report_text = obs.get("report_text", "")
+        # --- Reset ---
+        obs = await client.reset(options={"task_id": task_id})
+        report_text = ""
+        if hasattr(obs, "report_text"):
+            report_text = obs.report_text
+        elif isinstance(obs, dict):
+            report_text = obs.get("report_text", "")
+        else:
+            report_text = str(obs)
 
-        # --- Step 1: optional clarification for extra context ---
+        # --- Step 1: request clarification for extra context ---
         step += 1
-        clarify_action = {
-            "action_type": "request_clarification",
-            "clarification_request": "Please provide the raw data summary and statistical test details.",
-        }
         try:
-            clarify_obs = env_step(http, clarify_action)
-            reward_step1 = float(clarify_obs.get("reward", 0.0))
-            done_step1 = bool(clarify_obs.get("done", False))
-            rewards.append(reward_step1)
-            log_step(step, "request_clarification", reward_step1, done_step1, None)
+            clarify_action = {
+                "action_type": "request_clarification",
+                "clarification_request": "Please provide the raw data summary and statistical test details.",
+            }
+            clarify_obs = await client.step(clarify_action)
 
-            # Append any extra context to report
+            reward_c = 0.0
+            done_c = False
+            if hasattr(clarify_obs, "reward"):
+                reward_c = float(clarify_obs.reward)
+            elif isinstance(clarify_obs, dict):
+                reward_c = float(clarify_obs.get("reward", 0.0))
+
+            if hasattr(clarify_obs, "done"):
+                done_c = bool(clarify_obs.done)
+            elif isinstance(clarify_obs, dict):
+                done_c = bool(clarify_obs.get("done", False))
+
+            rewards.append(reward_c)
+            log_step(step, "request_clarification", reward_c, done_c, None)
+
+            # Append extra context
             extra = []
-            if clarify_obs.get("raw_data_summary"):
-                extra.append(f"DATA: {clarify_obs['raw_data_summary']}")
-            if clarify_obs.get("statistical_test_details"):
-                extra.append(f"TESTS: {clarify_obs['statistical_test_details']}")
+            raw_data = getattr(clarify_obs, "raw_data_summary", None) or (
+                clarify_obs.get("raw_data_summary") if isinstance(clarify_obs, dict) else None
+            )
+            test_details = getattr(clarify_obs, "statistical_test_details", None) or (
+                clarify_obs.get("statistical_test_details") if isinstance(clarify_obs, dict) else None
+            )
+            if raw_data:
+                extra.append(f"DATA: {raw_data}")
+            if test_details:
+                extra.append(f"TESTS: {test_details}")
             if extra:
                 report_text += "\n\n" + "\n".join(extra)
-        except Exception as exc:
-            last_error = str(exc)
-            log_step(step, "request_clarification", 0.0, False, last_error)
 
-        # --- Step 2: LLM audit ---
+        except Exception as exc:
+            rewards.append(0.0)
+            log_step(step, "request_clarification", 0.0, False, str(exc))
+
+        # --- Step 2: LLM audit and submit ---
         findings = call_llm(report_text, llm)
 
         step += 1
-        submit_action = {
-            "action_type": "submit_audit",
-            "findings": findings,
-        }
         try:
-            result_obs = env_step(http, submit_action)
-            reward_step2 = float(result_obs.get("reward", 0.0))
-            done_step2 = bool(result_obs.get("done", True))
-            rewards.append(reward_step2)
-            score = reward_step2
+            submit_action = {
+                "action_type": "submit_audit",
+                "findings": findings,
+            }
+            result_obs = await client.step(submit_action)
+
+            reward_s = 0.0
+            done_s = True
+            if hasattr(result_obs, "reward"):
+                reward_s = float(result_obs.reward)
+            elif isinstance(result_obs, dict):
+                reward_s = float(result_obs.get("reward", 0.0))
+
+            if hasattr(result_obs, "done"):
+                done_s = bool(result_obs.done)
+            elif isinstance(result_obs, dict):
+                done_s = bool(result_obs.get("done", True))
+
+            rewards.append(reward_s)
+            score = reward_s
             success = score >= SUCCESS_THRESHOLD
-            log_step(step, "submit_audit", reward_step2, done_step2, None)
+            log_step(step, "submit_audit", reward_s, done_s, None)
+
         except Exception as exc:
-            last_error = str(exc)
-            log_step(step, "submit_audit", 0.0, True, last_error)
+            rewards.append(0.0)
+            log_step(step, "submit_audit", 0.0, True, str(exc))
 
     except Exception as exc:
-        last_error = str(exc)
-        log_step(step or 1, "error", 0.0, True, last_error)
+        if not rewards:
+            rewards.append(0.0)
+        log_step(step or 1, "error", 0.0, True, str(exc))
 
     log_end(success=success, steps=step, score=score, rewards=rewards)
     return {"task_id": task_id, "score": score, "steps": step, "success": success}
@@ -234,39 +257,44 @@ def run_episode(task_id: str, http: httpx.Client, llm: OpenAI) -> Dict[str, Any]
 # Main
 # ---------------------------------------------------------------------------
 
-def main() -> None:
+async def async_main() -> None:
     if not API_KEY:
         print("ERROR: HF_TOKEN or API_KEY environment variable is not set.", file=sys.stderr)
         sys.exit(1)
 
     llm = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
-    http = httpx.Client(base_url=STATAUDIT_BASE_URL, timeout=120)
 
-    # Verify server health
-    try:
-        health = http.get("/health", timeout=15).json()
-    except Exception as exc:
-        print(f"ERROR: Cannot reach StatAudit server at {STATAUDIT_BASE_URL}: {exc}", file=sys.stderr)
-        sys.exit(1)
+    # Connect to the environment using the openenv client
+    if LOCAL_IMAGE_NAME:
+        # Validator provides LOCAL_IMAGE_NAME — spin up Docker container
+        client = await GenericEnvClient.from_docker_image(LOCAL_IMAGE_NAME)
+    else:
+        # Fallback: connect to HF Space or local server
+        env_url = os.getenv(
+            "STATAUDIT_BASE_URL",
+            "https://GJaiswal2006-statistical-audit-env.hf.space",
+        )
+        client = GenericEnvClient(base_url=env_url)
 
-    # Get available tasks
-    try:
-        tasks_resp = http.get("/tasks", timeout=15).json()
-        available = {t["task_id"] for t in tasks_resp.get("tasks", [])}
-    except Exception:
-        available = set(TASK_ORDER)
+    async with client:
+        results = []
+        for task_id in TASK_ORDER:
+            try:
+                summary = await run_episode(task_id, client, llm)
+                results.append(summary)
+            except Exception as exc:
+                log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
+                log_step(1, "error", 0.0, True, str(exc))
+                log_end(success=False, steps=1, score=0.0, rewards=[0.0])
+                results.append({"task_id": task_id, "score": 0.0, "steps": 1, "success": False})
 
-    results = []
-    for task_id in TASK_ORDER:
-        if task_id not in available:
-            continue
-        summary = run_episode(task_id, http, llm)
-        results.append(summary)
-
-    # Final summary to stderr (doesn't pollute [START]/[STEP]/[END] stdout)
     total = len(results)
     avg = sum(r["score"] for r in results) / total if total else 0.0
     print(f"\n# Summary: {total} tasks, average score={avg:.3f}", file=sys.stderr)
+
+
+def main() -> None:
+    asyncio.run(async_main())
 
 
 if __name__ == "__main__":
