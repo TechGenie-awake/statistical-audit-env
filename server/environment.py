@@ -33,6 +33,7 @@ class StatAuditEnvironment:
         self._cumulative_reward: float = 0.0
         self._episode_id: Optional[str] = None
         self._state: Optional[StatAuditState] = None
+        self._done: bool = False
 
     # ------------------------------------------------------------------
     # OpenEnv standard interface
@@ -54,6 +55,7 @@ class StatAuditEnvironment:
         self._step_count = 0
         self._hints_used = 0
         self._cumulative_reward = 0.0
+        self._done = False
         self._episode_id = str(uuid.uuid4())
 
         self._state = StatAuditState(
@@ -83,6 +85,8 @@ class StatAuditEnvironment:
         """Execute one step in the environment."""
         if self._current_task is None or self._state is None:
             raise RuntimeError("Call reset() before step().")
+        if self._done:
+            raise RuntimeError("Episode is done. Call reset() to start a new episode.")
 
         self._step_count += 1
         self._state.current_step = self._step_count
@@ -140,6 +144,9 @@ class StatAuditEnvironment:
         # Force episode end when max steps reached
         if self._step_count >= MAX_STEPS:
             obs_kwargs["done"] = True
+
+        if obs_kwargs["done"]:
+            self._done = True
 
         return StatAuditObservation(**obs_kwargs)
 

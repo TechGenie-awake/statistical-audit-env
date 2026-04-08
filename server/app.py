@@ -215,7 +215,7 @@ async def get_grader_score():
 
     state = env.state
     total = state.total_errors_in_report
-    score = round(state.errors_found / total, 4) if total > 0 else 0.0
+    score = round(state.cumulative_reward, 4)
 
     return GraderResponse(
         episode_id=state.episode_id,
