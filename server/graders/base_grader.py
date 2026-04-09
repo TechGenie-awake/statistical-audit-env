@@ -204,6 +204,9 @@ def grade_episode(
 
     total_reward = sum(component_rewards.values()) + efficiency
 
+    # Clamp to strict (0, 1) — validator rejects exactly 0.0 or 1.0
+    total_reward = max(0.001, min(0.999, total_reward))
+
     correctly_found = sum(
         1 for d in detailed_scores if d["score"] > 0.0
     )
