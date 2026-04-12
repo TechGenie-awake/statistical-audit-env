@@ -52,6 +52,11 @@ TASK_ORDER = [
 # Logging helpers (strict format — do not modify)
 # ---------------------------------------------------------------------------
 
+def _clamp(v: float) -> float:
+    """Clamp a score to strict (0, 1) — validator rejects exactly 0.0 and 1.0."""
+    return max(0.01, min(0.99, v))
+
+
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -60,17 +65,17 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
     error_val = error if error else "null"
     done_val = "true" if done else "false"
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} "
+        f"[STEP] step={step} action={action} reward={_clamp(reward):.2f} "
         f"done={done_val} error={error_val}",
         flush=True,
     )
 
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    rewards_str = ",".join(f"{_clamp(r):.2f}" for r in rewards)
     success_val = "true" if success else "false"
     print(
-        f"[END] success={success_val} steps={steps} score={score:.2f} rewards={rewards_str}",
+        f"[END] success={success_val} steps={steps} score={_clamp(score):.2f} rewards={rewards_str}",
         flush=True,
     )
 

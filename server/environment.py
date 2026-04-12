@@ -92,7 +92,7 @@ class StatAuditEnvironment(
             max_steps=MAX_STEPS,
             hints_used=0,
             done=False,
-            reward=0.0,
+            reward=0.01,
         )
 
     def step(
@@ -118,7 +118,7 @@ class StatAuditEnvironment(
             max_steps=MAX_STEPS,
             hints_used=self._hints_used,
             done=False,
-            reward=0.0,
+            reward=0.01,
         )
 
         if action.action_type == "submit_audit":
@@ -151,17 +151,19 @@ class StatAuditEnvironment(
                 obs_kwargs["statistical_test_details"] = self._current_task.get("test_details")
 
             obs_kwargs["done"] = False
-            obs_kwargs["reward"] = 0.0
+            obs_kwargs["reward"] = 0.01
 
         elif action.action_type == "mark_complete":
             obs_kwargs["done"] = True
-            obs_kwargs["reward"] = 0.0
+            obs_kwargs["reward"] = 0.01
 
         if self._step_count >= MAX_STEPS:
             obs_kwargs["done"] = True
 
         if obs_kwargs["done"]:
             self._done = True
+            # Clamp reward to strict (0, 1) — validator rejects 0.0 and 1.0
+            obs_kwargs["reward"] = max(0.001, min(0.999, obs_kwargs["reward"]))
 
         return StatAuditObservation(**obs_kwargs)
 
