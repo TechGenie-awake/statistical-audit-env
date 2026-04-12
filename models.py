@@ -101,7 +101,7 @@ class StatAuditObservation(Observation):
 
     # Episode status (openenv standard fields)
     done: bool = Field(default=False, description="Whether the episode has ended")
-    reward: float = Field(default=0.0, description="Reward earned this step")
+    reward: float = Field(default=0.01, description="Reward earned this step")
 
 
 class StatAuditState(State):

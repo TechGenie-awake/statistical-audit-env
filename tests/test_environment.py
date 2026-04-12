@@ -32,7 +32,7 @@ class TestReset:
         obs = env.reset(task_id=EASY_TASK)
         assert obs.step_count == 0
         assert obs.done is False
-        assert obs.reward == 0.0
+        assert obs.reward == 0.01
         assert obs.hints_used == 0
         assert len(obs.report_text) > 0
 
@@ -152,12 +152,8 @@ class TestMarkComplete:
         env.reset(task_id=EASY_TASK)
         obs = env.step(StatAuditAction(action_type="mark_complete"))
         assert obs.done is True
-        assert obs.reward == 0.0
-
-    def test_mark_complete_does_not_set_reward(self, env):
-        env.reset(task_id=EASY_TASK)
-        obs = env.step(StatAuditAction(action_type="mark_complete"))
-        assert obs.reward == 0.0
+        assert obs.reward > 0  # clamped to strict (0, 1)
+        assert obs.reward < 0.05  # minimal, not a real score
 
 
 class TestSubmitAudit:

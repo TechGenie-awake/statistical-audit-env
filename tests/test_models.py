@@ -100,7 +100,7 @@ class TestStatAuditObservation:
         assert obs.step_count == 0
         assert obs.max_steps == 10
         assert obs.done is False
-        assert obs.reward == 0.0
+        assert obs.reward == 0.01
         assert obs.hints_used == 0
         assert obs.previous_findings == []
         assert obs.raw_data_summary is None
